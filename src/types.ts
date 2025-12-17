@@ -7,7 +7,6 @@ export type Config = {
   initialFile?: string;
   // Server options
   port: number;
-  host: string;
   // UI options
   theme: string; // Theme name (built-in or custom)
   fontTheme: string; // Font name (built-in or custom)
@@ -29,7 +28,6 @@ export type ParsedArgs = {
   path?: string;
   flags: {
     port?: number;
-    host?: string;
     theme?: string;
     fontTheme?: string;
     open?: boolean;

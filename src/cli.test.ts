@@ -8,9 +8,8 @@ describe("parseArgs", () => {
   });
 
   test("parses flags", () => {
-    const result = parseArgs(["--port", "3000", "--host", "0.0.0.0"]);
+    const result = parseArgs(["--port", "3000"]);
     expect(result.flags.port).toBe(3000);
-    expect(result.flags.host).toBe("0.0.0.0");
   });
 
   test("parses boolean flags", () => {
@@ -40,7 +39,6 @@ describe("createConfig", () => {
     const parsed = parseArgs([]);
     const config = createConfig(parsed);
     expect(config.port).toBe(0);
-    expect(config.host).toBe("localhost");
     expect(config.theme).toBe("dark");
     expect(config.open).toBe(true);
     expect(config.watch).toBe(false);

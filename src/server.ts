@@ -268,7 +268,7 @@ export const startServer = async (config: Config, files: MarkdownFile[]) => {
 
   // Start listening
   await new Promise<void>((resolve) => {
-    server.listen(config.port, config.host, () => {
+    server.listen(config.port, "localhost", () => {
       resolve();
     });
   });
@@ -279,7 +279,7 @@ export const startServer = async (config: Config, files: MarkdownFile[]) => {
 
   // Return server-like object with consistent API
   return {
-    hostname: config.host,
+    hostname: "localhost",
     port: actualPort,
     stop: () => {
       wss?.close();

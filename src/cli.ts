@@ -18,7 +18,6 @@ Arguments:
 
 Options:
   --port <number>                   Port to bind to (default: random)
-  --host <string>                   Host interface (default: localhost)
   --theme <name>                    Color theme (default: dark)
                                     Built-in: dark, light, nord, dracula, solarized, monokai
                                     Custom themes: ~/.config/llmd/themes.json
@@ -57,8 +56,6 @@ export const parseArgs = (args: string[]): ParsedArgs => {
       flags.version = true;
     } else if (arg === "--port") {
       flags.port = Number.parseInt(args[++i] ?? "0", 10);
-    } else if (arg === "--host") {
-      flags.host = args[++i];
     } else if (arg === "--theme") {
       flags.theme = args[++i];
     } else if (arg === "--fonts") {
@@ -104,7 +101,7 @@ export const createConfig = (parsed: ParsedArgs): Config => {
     directory,
     initialFile,
     port: flags.port ?? 0,
-    host: flags.host ?? "localhost",
+    host: "localhost",
     theme: flags.theme ?? "dark",
     fontTheme:
       (flags.fontTheme as
