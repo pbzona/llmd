@@ -37,7 +37,7 @@ jobs:
         run: bun test
       
       - name: Build for npm (Node.js bundle)
-        run: bun run build:npm
+        run: bun run build
       
       - name: Verify build output
         run: |
