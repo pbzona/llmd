@@ -1,0 +1,25 @@
+# Development
+.github/
+.husky/
+.cursor/
+.claude/
+test-fixtures/
+benchmarks/
+scripts/
+dist/
+
+# Tests
+*.test.ts
+
+# Config
+.vscode/
+biome.json
+tsconfig.json
+
+# Internal docs
+AGENTS.md
+CLAUDE.md
+IMPLEMENTATION.md
+
+# Build artifacts
+*.tgz

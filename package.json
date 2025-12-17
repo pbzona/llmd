@@ -1,0 +1,67 @@
+{
+  "name": "llmd",
+  "version": "0.1.0",
+  "description": "Local markdown server for LLM-generated docs",
+  "author": "Phil Zona <phil.b.zona@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pbzona/llmd.git"
+  },
+  "homepage": "https://github.com/pbzona/llmd#readme",
+  "bugs": {
+    "url": "https://github.com/pbzona/llmd/issues"
+  },
+  "module": "index.ts",
+  "type": "module",
+  "bin": {
+    "llmd": "./index.ts"
+  },
+  "files": [
+    "src/",
+    "index.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "test": "bun test",
+    "build": "./scripts/build.sh",
+    "build:all": "echo 'Run this in CI for multi-platform builds'",
+    "install:local": "./scripts/install-local.sh",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "check": "biome check --write .",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "markdown",
+    "server",
+    "documentation",
+    "html",
+    "llm"
+  ],
+  "dependencies": {
+    "figlet": "^1.9.4",
+    "marked": "^17.0.1",
+    "shiki": "^3.20.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.8",
+    "@types/bun": "latest",
+    "@types/figlet": "^1.7.0",
+    "husky": "^9.1.7",
+    "ultracite": "6.4.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

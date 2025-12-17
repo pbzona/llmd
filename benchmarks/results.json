@@ -1,0 +1,27 @@
+{
+  "timestamp": "2025-12-16T22:31:31.611Z",
+  "results": [
+    {
+      "name": "File Scanning",
+      "duration": 2.885582999999997,
+      "filesCount": 6,
+      "avgPerFile": 0.4809304999999995
+    },
+    {
+      "name": "Rendering (simple)",
+      "duration": 2.3559589999999986
+    },
+    {
+      "name": "Rendering (medium)",
+      "duration": 92.20700000000002
+    },
+    {
+      "name": "Rendering (complex)",
+      "duration": 25.10133400000001
+    }
+  ],
+  "summary": {
+    "totalBenchmarks": 4,
+    "totalTime": 122.54987600000003
+  }
+}
