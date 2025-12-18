@@ -21,7 +21,7 @@ Arguments:
   path                     Directory or file to serve (default: current directory)
 
 Commands:
-  docs                     View llmd documentation (clones repo to ~/.local/share/llmd)
+  docs                     View llmd documentation (clones repo to ~/.local/share/llmd-docs)
   analytics [subcommand]   Manage analytics
     view [path]            Open to analytics page (default subcommand)
     enable                 Enable analytics tracking
@@ -50,7 +50,7 @@ Examples:
   llmd analytics view ~/my-project  # Open analytics for specific project
   llmd analytics enable             # Enable analytics tracking
   llmd analytics disable            # Disable analytics tracking
-  llmd --fonts modern               # Use modern font combo (Tajawal + Fira Code)
+  llmd --fonts modern               # Use modern font combo (Inter + JetBrains Mono)
   llmd --theme nord                 # Use Nord color theme
   llmd --theme dracula --watch      # Dracula theme with live reload
 `;
