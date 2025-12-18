@@ -17,15 +17,30 @@ const IGNORED_DIRECTORIES = [
 ];
 
 // Dynamic database creation for Bun vs Node.js compatibility
+// Returns null if database creation fails (better-sqlite3 not available)
 // biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-const createDatabase = (path: string): any => {
-  // biome-ignore lint/suspicious/noExplicitAny: Runtime detection
-  if (typeof Bun !== "undefined" && (globalThis as any).Bun) {
-    const { Database } = require("bun:sqlite");
-    return new Database(path);
+const createDatabase = (path: string): any | null => {
+  try {
+    // biome-ignore lint/suspicious/noExplicitAny: Runtime detection
+    if (typeof Bun !== "undefined" && (globalThis as any).Bun) {
+      const { Database } = require("bun:sqlite");
+      return new Database(path);
+    }
+    const BetterSqlite3 = require("better-sqlite3");
+    return new BetterSqlite3(path);
+  } catch (error) {
+    // Gracefully handle missing better-sqlite3 (native module not available)
+    console.warn("[llmd] Analytics disabled: SQLite database unavailable");
+    console.warn("[llmd] To enable analytics, rebuild the native bindings:");
+    console.warn("[llmd]   npm rebuild better-sqlite3");
+    console.warn("[llmd] Or reinstall llmd:");
+    console.warn("[llmd]   npm install -g llmd --force");
+    console.warn("[llmd] The app will work normally without analytics");
+    if (process.env.DEBUG || process.env.LLMD_DEBUG) {
+      console.error("[llmd] Database error:", error);
+    }
+    return null;
   }
-  const BetterSqlite3 = require("better-sqlite3");
-  return new BetterSqlite3(path);
 };
 
 // Pure function: resolve database path using XDG_DATA_HOME or fallback
@@ -264,6 +279,11 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
   checkDatabaseSize(actualDbPath);
 
   const db = createDatabase(actualDbPath);
+
+  // If database creation failed (better-sqlite3 not available), return null service
+  if (!db) {
+    return null;
+  }
 
   // Initialize schema
   initializeDatabase(db);

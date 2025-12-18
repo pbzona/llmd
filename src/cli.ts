@@ -55,52 +55,104 @@ Examples:
   llmd --theme dracula --watch      # Dracula theme with live reload
 `;
 
+// Helper: parse analytics command and subcommand
+const parseAnalyticsCommand = (
+  args: string[],
+  index: number
+): { subcommand: "view" | "enable" | "disable"; nextIndex: number } => {
+  const nextArg = args[index + 1];
+  if (nextArg === "enable" || nextArg === "disable" || nextArg === "view") {
+    return { subcommand: nextArg, nextIndex: index + 1 };
+  }
+  return { subcommand: "view", nextIndex: index };
+};
+
+// Helper: parse boolean flags
+const parseBooleanFlag = (arg: string, flags: ParsedArgs["flags"]): boolean => {
+  if (arg === "--help" || arg === "-h") {
+    flags.help = true;
+    return true;
+  }
+  if (arg === "--version") {
+    flags.version = true;
+    return true;
+  }
+  if (arg === "docs") {
+    flags.docs = true;
+    return true;
+  }
+  if (arg === "--open") {
+    flags.open = true;
+    return true;
+  }
+  if (arg === "--no-open") {
+    flags.open = false;
+    return true;
+  }
+  if (arg === "--watch") {
+    flags.watch = true;
+    return true;
+  }
+  if (arg === "--no-watch") {
+    flags.watch = false;
+    return true;
+  }
+  return false;
+};
+
+// Helper: parse flags with values
+const parseValueFlag = (
+  arg: string,
+  args: string[],
+  index: number,
+  flags: ParsedArgs["flags"]
+): number => {
+  if (arg === "--port") {
+    flags.port = Number.parseInt(args[index + 1] ?? "0", 10);
+    return index + 1;
+  }
+  if (arg === "--theme") {
+    flags.theme = args[index + 1];
+    return index + 1;
+  }
+  if (arg === "--fonts") {
+    flags.fontTheme = args[index + 1];
+    return index + 1;
+  }
+  if (arg === "analytics") {
+    flags.analytics = true;
+    const { subcommand, nextIndex } = parseAnalyticsCommand(args, index);
+    flags.analyticsSubcommand = subcommand;
+    return nextIndex;
+  }
+  return index;
+};
+
 // Pure function: parse raw CLI arguments
 export const parseArgs = (args: string[]): ParsedArgs => {
   const flags: ParsedArgs["flags"] = {};
   let path: string | undefined;
 
-  for (let i = 0; i < args.length; i++) {
+  for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (!arg) {
       continue;
     }
 
-    if (arg === "--help" || arg === "-h") {
-      flags.help = true;
-    } else if (arg === "--version") {
-      flags.version = true;
-    } else if (arg === "docs") {
-      flags.docs = true;
-    } else if (arg === "analytics") {
-      flags.analytics = true;
-      // Check for subcommand
-      const nextArg = args[i + 1];
-      if (nextArg === "enable" || nextArg === "disable" || nextArg === "view") {
-        flags.analyticsSubcommand = nextArg;
-        i += 1; // Skip the subcommand
-      } else {
-        // Default to "view"
-        flags.analyticsSubcommand = "view";
-      }
-    } else if (arg === "--port") {
-      i += 1;
-      flags.port = Number.parseInt(args[i] ?? "0", 10);
-    } else if (arg === "--theme") {
-      i += 1;
-      flags.theme = args[i];
-    } else if (arg === "--fonts") {
-      i += 1;
-      flags.fontTheme = args[i];
-    } else if (arg === "--open") {
-      flags.open = true;
-    } else if (arg === "--no-open") {
-      flags.open = false;
-    } else if (arg === "--watch") {
-      flags.watch = true;
-    } else if (arg === "--no-watch") {
-      flags.watch = false;
-    } else if (!arg.startsWith("-")) {
+    // Try parsing as boolean flag
+    if (parseBooleanFlag(arg, flags)) {
+      continue;
+    }
+
+    // Try parsing as value flag
+    const newIndex = parseValueFlag(arg, args, i, flags);
+    if (newIndex !== i) {
+      i = newIndex;
+      continue;
+    }
+
+    // Otherwise, it's a path argument
+    if (!arg.startsWith("-")) {
       path = arg;
     }
   }
@@ -137,19 +189,7 @@ export const createConfig = (parsed: ParsedArgs): Config => {
     initialFile,
     port: flags.port ?? 0,
     theme: flags.theme ?? savedPreferences.theme ?? "dark",
-    fontTheme:
-      (flags.fontTheme as
-        | "serif"
-        | "sans"
-        | "mono"
-        | "classic"
-        | "future"
-        | "modern"
-        | "artsy"
-        | "literary"
-        | "editorial") ??
-      savedPreferences.fontTheme ??
-      "sans",
+    fontTheme: flags.fontTheme ?? savedPreferences.fontTheme ?? "sans",
     open: flags.open ?? true,
     watch: flags.watch ?? false,
     openToAnalytics: flags.analytics ?? false,
