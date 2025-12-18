@@ -1,15 +1,15 @@
 // Client-side: Add copy buttons to code blocks
 
 const addCopyButtons = () => {
-  document.querySelectorAll("pre code").forEach((codeBlock) => {
+  for (const codeBlock of Array.from(document.querySelectorAll("pre code"))) {
     const pre = codeBlock.parentElement;
     if (!pre) {
-      return;
+      continue;
     }
 
     // Don't add button twice
     if (pre.querySelector(".copy-button")) {
-      return;
+      continue;
     }
 
     // Create copy button
@@ -39,7 +39,7 @@ const addCopyButtons = () => {
     });
 
     pre.appendChild(button);
-  });
+  }
 };
 
 // Run on page load

@@ -73,7 +73,7 @@ export const watchFile = (
         );
 
         // Broadcast reload to all subscribers
-        watched.subscribers.forEach((ws) => {
+        for (const ws of watched.subscribers) {
           try {
             ws.send(
               JSON.stringify({
@@ -84,7 +84,7 @@ export const watchFile = (
           } catch (err) {
             console.error("[watcher] Failed to send reload message:", err);
           }
-        });
+        }
       });
 
       debouncedBroadcast();
@@ -138,15 +138,15 @@ export const unwatchFile = (
 export const cleanupAllWatchers = (): void => {
   console.log(`[watcher] Cleaning up ${watchedFiles.size} watcher(s)`);
 
-  watchedFiles.forEach((watched) => {
+  for (const watched of watchedFiles.values()) {
     watched.watcher.close();
-  });
+  }
 
   watchedFiles.clear();
 
-  debounceTimers.forEach((timer) => {
+  for (const timer of debounceTimers.values()) {
     clearTimeout(timer);
-  });
+  }
 
   debounceTimers.clear();
 };
