@@ -24,10 +24,15 @@ const handleDocsCommand = async (): Promise<void> => {
 
   console.log("→ Preparing llmd documentation...\n");
 
-  // Clone if doesn't exist, otherwise use cached
+  // Clone if doesn't exist, otherwise pull latest changes
   if (existsSync(docsPath)) {
-    console.log(`→ Using cached documentation at ${docsPath}`);
-    console.log(`  (Run 'rm -rf "${docsPath}"' to re-clone)\n`);
+    console.log(`→ Updating cached documentation at ${docsPath}...`);
+    try {
+      execSync("git pull --rebase", { cwd: docsPath, stdio: "inherit" });
+      console.log("✓ Documentation updated\n");
+    } catch (_error) {
+      console.log("  Warning: Could not update docs, using cached version\n");
+    }
   } else {
     console.log(`→ Cloning llmd repository to ${docsPath}...`);
     try {
@@ -103,7 +108,8 @@ const main = async () => {
 
     if (result.type === "docs") {
       await handleDocsCommand();
-      process.exit(0);
+      // Keep process running - handleDocsCommand sets up SIGINT handler
+      return;
     }
 
     // Must be config type
