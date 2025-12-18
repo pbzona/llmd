@@ -51,6 +51,7 @@ const generateHighlightsContent = (
     endOffset: number;
     highlightedText: string;
     isStale: boolean;
+    notes: string | null;
     createdAt: number;
     updatedAt: number;
   }>,
@@ -105,6 +106,14 @@ const generateHighlightsContent = (
           <div style="padding: 16px; background: var(--bg); border-left: 3px solid var(--accent); border-radius: 4px; font-size: 14px; line-height: 1.6;">
             ${h.highlightedText}
           </div>
+          ${
+            h.notes
+              ? `<div style="margin-top: 12px; padding: 12px; background: var(--sidebar-bg); border-radius: 4px; border-left: 3px solid var(--border);">
+                  <div style="opacity: 0.6; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">Note</div>
+                  <div style="font-size: 13px; line-height: 1.5; white-space: pre-wrap;">${h.notes}</div>
+                </div>`
+              : ""
+          }
           ${staleWarning}
           <div style="margin-top: 12px; display: flex; gap: 8px;">
             <button 

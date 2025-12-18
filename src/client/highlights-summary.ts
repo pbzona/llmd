@@ -24,6 +24,10 @@ const scrollToHighlight = (highlightId: string): void => {
   }
 };
 
+// Pure function: truncate text to max length
+const truncateText = (text: string, maxLength: number): string =>
+  text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+
 // Initialize highlights summary
 export const initHighlightsSummary = (): void => {
   const contentArea = document.querySelector(".content");
@@ -64,6 +68,7 @@ export const initHighlightsSummary = (): void => {
                   id: string;
                   highlightedText: string;
                   isStale: boolean;
+                  notes: string | null;
                   createdAt: number;
                 }) => {
                   const staleIcon = h.isStale
@@ -77,12 +82,18 @@ export const initHighlightsSummary = (): void => {
                       ? `${h.highlightedText.slice(0, 80)}...`
                       : h.highlightedText;
 
+                  const notesSummary = h.notes ? truncateText(h.notes, 60) : "";
+                  const notesPreview = notesSummary
+                    ? `<div style="margin-top: 4px; padding: 6px; background: var(--sidebar-bg); border-radius: 3px; font-size: 11px; opacity: 0.8;">💭 ${notesSummary}</div>`
+                    : "";
+
                   return `
                     <li style="margin: 8px 0; padding: 8px; background: var(--bg); border-radius: 4px; border-left: 3px solid var(--accent); cursor: pointer; transition: background 0.2s;" 
                         onmouseover="this.style.background='var(--hover)'" 
                         onmouseout="this.style.background='var(--bg)'"
                         onclick="(${scrollToHighlight.toString()})('${h.id}')">
                       <div${staleLine}>${previewText}</div>
+                      ${notesPreview}
                       <div style="opacity: 0.5; font-size: 12px; margin-top: 4px;">
                         ${formatDate(h.createdAt)}${staleIcon}
                       </div>
