@@ -103,6 +103,10 @@ const initializeDatabase = (db: any): void => {
     CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
     CREATE INDEX IF NOT EXISTS idx_resources_path ON resources(path);
   `);
+
+  // Initialize highlights schema (adds columns to resources table + new highlights table)
+  const { initializeHighlightsSchema } = require("./highlights");
+  initializeHighlightsSchema(db);
 };
 
 // Side effect: recursively scan directory and create resources
