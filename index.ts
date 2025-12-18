@@ -8,7 +8,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { openBrowser } from "./src/browser";
 import { parseCli } from "./src/cli";
-import { disableAnalytics, enableAnalytics, saveThemePreferences } from "./src/events";
+import {
+  cleanupOldEvents,
+  clearDatabase,
+  disableAnalytics,
+  enableAnalytics,
+  getDatabaseStats,
+  saveThemePreferences,
+} from "./src/events";
 import { getRelativePath, scanMarkdownFiles } from "./src/scanner";
 import { getServerUrl, startServer } from "./src/server";
 import { printSplash } from "./src/splash";
@@ -81,7 +88,71 @@ const handleDocsCommand = async (): Promise<void> => {
   });
 };
 
+// Side effect: Handle db check command
+const handleDbCheck = async (): Promise<void> => {
+  console.log("→ Checking database...\n");
+  const stats = await getDatabaseStats();
+
+  console.log("Database Statistics:");
+  console.log(`  Location: ${stats.databasePath}`);
+  console.log(`  Size: ${stats.fileSizeMB} MB (${stats.fileSizeBytes.toLocaleString()} bytes)`);
+  console.log(`  Resources: ${stats.totalResources.toLocaleString()}`);
+  console.log(`  Events: ${stats.totalEvents.toLocaleString()}`);
+
+  if (stats.oldestEventTimestamp) {
+    const oldestDate = new Date(stats.oldestEventTimestamp);
+    console.log(`  Oldest event: ${oldestDate.toLocaleString()}`);
+  }
+
+  if (stats.newestEventTimestamp) {
+    const newestDate = new Date(stats.newestEventTimestamp);
+    console.log(`  Newest event: ${newestDate.toLocaleString()}`);
+  }
+
+  console.log();
+};
+
+// Side effect: Handle db cleanup command
+const handleDbCleanup = (days: number): void => {
+  console.log(`→ Cleaning up events older than ${days} days...\n`);
+  const result = cleanupOldEvents(days);
+
+  console.log("Cleanup Results:");
+  console.log(`  Deleted events: ${result.deletedEvents.toLocaleString()}`);
+  console.log(`  Deleted resources: ${result.deletedResources.toLocaleString()}`);
+  console.log();
+};
+
+// Side effect: Handle db clear command
+const handleDbClear = async (): Promise<void> => {
+  console.log("⚠️  This will delete ALL analytics data (events and resources).");
+  console.log("   This action cannot be undone.\n");
+
+  // Read user confirmation from stdin
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const answer = await new Promise<string>((resolve) => {
+    rl.question("   Type 'yeah really plz delete' to confirm: ", (ans) => {
+      rl.close();
+      resolve(ans);
+    });
+  });
+
+  if (answer === "yeah really plz delete") {
+    console.log("\n→ Clearing all analytics data...\n");
+    clearDatabase();
+    console.log("✓ Database cleared\n");
+  } else {
+    console.log("\n✗ Cancelled\n");
+  }
+};
+
 // Main async function
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI coordination requires branching
 const main = async () => {
   try {
     // Print splash
@@ -103,6 +174,21 @@ const main = async () => {
 
     if (result.type === "analytics-disable") {
       disableAnalytics();
+      process.exit(0);
+    }
+
+    if (result.type === "db-check") {
+      await handleDbCheck();
+      process.exit(0);
+    }
+
+    if (result.type === "db-cleanup") {
+      await handleDbCleanup(result.days);
+      process.exit(0);
+    }
+
+    if (result.type === "db-clear") {
+      await handleDbClear();
       process.exit(0);
     }
 

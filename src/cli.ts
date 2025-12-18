@@ -16,6 +16,7 @@ Usage:
   llmd [path] [options]
   llmd docs
   llmd analytics [subcommand] [path] [options]
+  llmd db [subcommand] [options]
 
 Arguments:
   path                     Directory or file to serve (default: current directory)
@@ -26,6 +27,10 @@ Commands:
     view [path]            Open to analytics page (default subcommand)
     enable                 Enable analytics tracking
     disable                Disable analytics tracking
+  db [subcommand]          Manage analytics database
+    check                  Show database size and statistics
+    cleanup [--days N]     Delete events older than N days (default: 30)
+    clear                  Clear all events and resources from database
 
 Options:
   --port <number>                   Port to bind to (default: random)
@@ -37,6 +42,7 @@ Options:
                                     Custom fonts: ~/.config/llmd/fonts.json
   --open / --no-open                Auto-open browser (default: --open)
   --watch / --no-watch              Reload on file changes (default: --no-watch)
+  --days <number>                   Number of days for db cleanup (default: 30)
   -h, --help                        Show this help
   --version                         Show version
 
@@ -50,6 +56,9 @@ Examples:
   llmd analytics view ~/my-project  # Open analytics for specific project
   llmd analytics enable             # Enable analytics tracking
   llmd analytics disable            # Disable analytics tracking
+  llmd db check                     # Show database statistics
+  llmd db cleanup --days 30         # Delete events older than 30 days
+  llmd db clear                     # Clear all analytics data
   llmd --fonts modern               # Use modern font combo (Inter + JetBrains Mono)
   llmd --theme nord                 # Use Nord color theme
   llmd --theme dracula --watch      # Dracula theme with live reload
@@ -65,6 +74,18 @@ const parseAnalyticsCommand = (
     return { subcommand: nextArg, nextIndex: index + 1 };
   }
   return { subcommand: "view", nextIndex: index };
+};
+
+// Helper: parse db command and subcommand
+const parseDbCommand = (
+  args: string[],
+  index: number
+): { subcommand: "check" | "cleanup" | "clear"; nextIndex: number } => {
+  const nextArg = args[index + 1];
+  if (nextArg === "check" || nextArg === "cleanup" || nextArg === "clear") {
+    return { subcommand: nextArg, nextIndex: index + 1 };
+  }
+  return { subcommand: "check", nextIndex: index };
 };
 
 // Helper: parse boolean flags
@@ -124,6 +145,17 @@ const parseValueFlag = (
     const { subcommand, nextIndex } = parseAnalyticsCommand(args, index);
     flags.analyticsSubcommand = subcommand;
     return nextIndex;
+  }
+  if (arg === "db") {
+    flags.db = true;
+    const { subcommand, nextIndex } = parseDbCommand(args, index);
+    flags.dbSubcommand = subcommand;
+    return nextIndex;
+  }
+  if (arg === "--days") {
+    const daysValue = Number.parseInt(args[index + 1] ?? "30", 10);
+    flags.days = Number.isNaN(daysValue) ? 30 : daysValue;
+    return index + 1;
   }
   return index;
 };
@@ -255,6 +287,20 @@ export const parseCli = (args: string[]): CliResult => {
       return { type: "analytics-disable" };
     }
     // "view" continues to normal flow
+  }
+
+  // Handle db subcommands
+  if (parsed.flags.db && parsed.flags.dbSubcommand) {
+    if (parsed.flags.dbSubcommand === "check") {
+      return { type: "db-check" };
+    }
+    if (parsed.flags.dbSubcommand === "cleanup") {
+      const days = parsed.flags.days ?? 30;
+      return { type: "db-cleanup", days };
+    }
+    if (parsed.flags.dbSubcommand === "clear") {
+      return { type: "db-clear" };
+    }
   }
 
   const config = createConfig(parsed);

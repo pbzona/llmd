@@ -480,6 +480,26 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
     return timeSeries;
   };
 
+  // Public API: get database statistics
+  // biome-ignore lint: Explicit async function for clarity
+  const getDatabaseStatsService = async (): Promise<import("./types").DatabaseStats> => {
+    return await getDatabaseStats();
+  };
+
+  // Public API: cleanup old events
+  // biome-ignore lint: Returns promise from synchronous function
+  const cleanupOldEventsService = async (
+    days: number
+  ): Promise<{ deletedEvents: number; deletedResources: number }> => {
+    return cleanupOldEvents(days);
+  };
+
+  // Public API: clear database
+  // biome-ignore lint: Void function wrapped in async
+  const clearDatabaseService = async (): Promise<void> => {
+    clearDatabase();
+  };
+
   // Public API: close database
   const close = (): void => {
     db.close();
@@ -489,6 +509,9 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
     recordEvent,
     getAnalytics,
     getActivityTimeSeries,
+    getDatabaseStats: getDatabaseStatsService,
+    cleanupOldEvents: cleanupOldEventsService,
+    clearDatabase: clearDatabaseService,
     close,
   };
 };
@@ -590,5 +613,94 @@ export const loadThemePreferences = (): { theme?: string; fontTheme?: string } =
   } catch {
     // Database doesn't exist or can't be read - return empty
     return {};
+  }
+};
+
+// Side effect: get database statistics
+export const getDatabaseStats = async (): Promise<import("./types").DatabaseStats> => {
+  const dbPath = resolveDatabasePath();
+  const db = createDatabase(dbPath);
+  initializeDatabase(db);
+
+  try {
+    // Get file size
+    const { statSync } = await import("node:fs");
+    const stats = statSync(dbPath);
+    const fileSizeBytes = stats.size;
+    const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+
+    // Get total resources
+    const totalResourcesStmt = db.prepare("SELECT COUNT(*) as count FROM resources");
+    const totalResources = (totalResourcesStmt.get() as { count: number }).count;
+
+    // Get total events
+    const totalEventsStmt = db.prepare("SELECT COUNT(*) as count FROM events");
+    const totalEvents = (totalEventsStmt.get() as { count: number }).count;
+
+    // Get oldest and newest event timestamps
+    const oldestStmt = db.prepare("SELECT MIN(timestamp) as oldest FROM events");
+    const newestStmt = db.prepare("SELECT MAX(timestamp) as newest FROM events");
+    const oldestResult = oldestStmt.get() as { oldest: number | null };
+    const newestResult = newestStmt.get() as { newest: number | null };
+
+    return {
+      fileSizeBytes,
+      fileSizeMB,
+      totalResources,
+      totalEvents,
+      oldestEventTimestamp: oldestResult.oldest,
+      newestEventTimestamp: newestResult.newest,
+      databasePath: dbPath,
+    };
+  } finally {
+    db.close();
+  }
+};
+
+// Side effect: cleanup old events (delete events older than N days)
+export const cleanupOldEvents = (
+  days: number
+): { deletedEvents: number; deletedResources: number } => {
+  const dbPath = resolveDatabasePath();
+  const db = createDatabase(dbPath);
+  initializeDatabase(db);
+
+  try {
+    const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000;
+
+    // Delete old events
+    const deleteEventsStmt = db.prepare("DELETE FROM events WHERE timestamp < ?");
+    const eventsResult = deleteEventsStmt.run(cutoffTime);
+    const deletedEvents = eventsResult.changes || 0;
+
+    // Delete resources that have no events (orphaned resources)
+    const deleteResourcesStmt = db.prepare(`
+      DELETE FROM resources 
+      WHERE id NOT IN (SELECT DISTINCT resource_id FROM events)
+    `);
+    const resourcesResult = deleteResourcesStmt.run();
+    const deletedResources = resourcesResult.changes || 0;
+
+    return { deletedEvents, deletedResources };
+  } finally {
+    db.close();
+  }
+};
+
+// Side effect: clear all events and resources from database
+export const clearDatabase = (): void => {
+  const dbPath = resolveDatabasePath();
+  const db = createDatabase(dbPath);
+  initializeDatabase(db);
+
+  try {
+    // Delete all events first (due to foreign key constraints)
+    db.exec("DELETE FROM events");
+    // Delete all resources
+    db.exec("DELETE FROM resources");
+    // Vacuum to reclaim space
+    db.exec("VACUUM");
+  } finally {
+    db.close();
   }
 };

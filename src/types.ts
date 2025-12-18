@@ -37,6 +37,9 @@ export type ParsedArgs = {
     version?: boolean;
     analytics?: boolean;
     analyticsSubcommand?: "view" | "enable" | "disable";
+    db?: boolean;
+    dbSubcommand?: "check" | "cleanup" | "clear";
+    days?: number;
     docs?: boolean;
   };
 };
@@ -45,6 +48,9 @@ export type CliResult =
   | { type: "config"; config: Config }
   | { type: "analytics-enable" }
   | { type: "analytics-disable" }
+  | { type: "db-check" }
+  | { type: "db-cleanup"; days: number }
+  | { type: "db-clear" }
   | { type: "docs" }
   | { type: "exit" };
 
@@ -84,6 +90,16 @@ export type AnalyticsData = {
   totalResources: number;
 };
 
+export type DatabaseStats = {
+  fileSizeBytes: number;
+  fileSizeMB: string;
+  totalResources: number;
+  totalEvents: number;
+  oldestEventTimestamp: number | null;
+  newestEventTimestamp: number | null;
+  databasePath: string;
+};
+
 export type EventService = {
   recordEvent: (type: EventType, absolutePath: string, resourceType: ResourceType) => void;
   getAnalytics: (directory?: string) => Promise<AnalyticsData>;
@@ -91,5 +107,8 @@ export type EventService = {
     directory: string | null,
     days: number
   ) => Promise<Array<{ date: string; count: number }>>;
+  getDatabaseStats: () => Promise<DatabaseStats>;
+  cleanupOldEvents: (days: number) => Promise<{ deletedEvents: number; deletedResources: number }>;
+  clearDatabase: () => Promise<void>;
   close: () => void;
 };
