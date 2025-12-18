@@ -7,6 +7,7 @@ type Highlight = {
   endOffset: number;
   highlightedText: string;
   isStale: boolean;
+  notes: string | null;
   createdAt: number;
 };
 
@@ -121,6 +122,66 @@ const hidePopup = (): void => {
   currentSelection = null;
 };
 
+// Show notes popup when clicking on an existing highlight
+const showNotesPopup = (highlight: Highlight, e: MouseEvent): void => {
+  // Create a small popup to display notes
+  const notesPopup = document.createElement("div");
+  notesPopup.className = "highlight-notes-popup";
+  notesPopup.style.cssText = `
+    position: absolute;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    max-width: 300px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    font-size: 13px;
+    line-height: 1.5;
+  `;
+
+  const header = document.createElement("div");
+  header.style.cssText =
+    "display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;";
+
+  const title = document.createElement("span");
+  title.textContent = "Highlight Notes";
+  title.style.cssText = "font-weight: 600; color: var(--fg);";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "×";
+  closeBtn.style.cssText =
+    "background: none; border: none; color: var(--fg); cursor: pointer; padding: 0; font-size: 18px; line-height: 1; opacity: 0.7;";
+  closeBtn.addEventListener("click", () => notesPopup.remove());
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  const content = document.createElement("div");
+  content.style.cssText = "color: var(--fg); white-space: pre-wrap; word-wrap: break-word;";
+  content.textContent = highlight.notes || "(No notes)";
+
+  notesPopup.appendChild(header);
+  notesPopup.appendChild(content);
+
+  // Position near click
+  notesPopup.style.left = `${e.pageX}px`;
+  notesPopup.style.top = `${e.pageY + 10}px`;
+
+  document.body.appendChild(notesPopup);
+
+  // Close when clicking outside
+  const closeOnClickOutside = (clickEvent: MouseEvent) => {
+    if (!notesPopup.contains(clickEvent.target as Node)) {
+      notesPopup.remove();
+      document.removeEventListener("click", closeOnClickOutside);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener("click", closeOnClickOutside);
+  }, 0);
+};
+
 // Create popup element with notes textarea
 const createPopup = (): HTMLElement => {
   const div = document.createElement("div");
@@ -216,6 +277,7 @@ const createHighlight = async (): Promise<void> => {
       endOffset,
       highlightedText: currentSelection.text,
       isStale: false,
+      notes: notes || null,
       createdAt: Date.now(),
     });
 
@@ -315,6 +377,13 @@ const renderHighlights = (): void => {
       mark.className = highlight.isStale ? "llmd-highlight llmd-highlight-stale" : "llmd-highlight";
       mark.dataset.highlightId = highlight.id;
       mark.title = highlight.isStale ? "This highlight may be outdated" : "";
+      mark.style.cursor = "pointer";
+
+      // Add click handler to show notes
+      mark.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showNotesPopup(highlight, e as MouseEvent);
+      });
 
       range.surroundContents(mark);
     } catch (err) {

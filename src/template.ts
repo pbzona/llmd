@@ -708,7 +708,7 @@ const renderTreeNodes = (nodes: TreeNode[], currentPath?: string): string =>
       }
       const isActive = currentPath === node.path;
       const activeClass = isActive ? "active" : "";
-      return `<li><a href="/view/${node.path}" class="depth-${node.depth} ${activeClass}">${FILE_ICON}<span>${node.name}</span></a></li>`;
+      return `<li><a href="/view/${node.path}" class="depth-${node.depth} ${activeClass}" data-file-path="${node.path}"><span class="file-icon">${FILE_ICON}</span><span>${node.name}</span></a></li>`;
     })
     .join("\n");
 

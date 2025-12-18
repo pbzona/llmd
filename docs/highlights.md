@@ -27,8 +27,13 @@ The highlight is saved to the database and will persist across sessions.
 
 **On the page:**
 - Highlights appear with your theme's highlight color and a border
+- Click on any highlighted text to view your notes in a popup
 - A summary box shows all highlights for the current file
 - Click any highlight in the summary to scroll to it in the document
+
+**In the sidebar:**
+- Files with highlights have a filled file icon (subtle indicator)
+- Quickly identify which files contain highlights at a glance
 
 **In the highlights page:**
 - Click "Highlights" in the sidebar under "Admin"
