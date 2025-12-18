@@ -4,6 +4,7 @@
 import "./client/collapsible";
 import "./client/copy-button";
 import "./client/file-watcher";
+import { initHighlights } from "./client/highlights";
 import "./client/sidebar-resize";
 import { trackDirectoryOpen, trackFileView } from "./client/events";
 
@@ -12,5 +13,10 @@ import { trackDirectoryOpen, trackFileView } from "./client/events";
 (window as any).trackDirectoryOpen = trackDirectoryOpen;
 // biome-ignore lint/suspicious/noExplicitAny: Need to extend window global
 (window as any).trackFileView = trackFileView;
+
+// Initialize highlights on markdown pages
+if (document.querySelector(".content")) {
+  initHighlights();
+}
 
 console.log("[llmd] Client initialized");

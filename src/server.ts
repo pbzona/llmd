@@ -143,7 +143,7 @@ const handleMarkdownView = async (
 };
 
 // Helper: parse JSON body from request
-const parseJsonBody = (req: import("node:http").IncomingMessage): Promise<unknown> =>
+const _parseJsonBody = (req: import("node:http").IncomingMessage): Promise<unknown> =>
   new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk) => {

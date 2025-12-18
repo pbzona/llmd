@@ -521,6 +521,56 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       color: ${isDark ? "#c0c0c0" : "#666"};
     }
     
+    /* Highlights */
+    .llmd-highlight {
+      background: ${isDark ? "rgba(255, 220, 0, 0.25)" : "rgba(255, 235, 59, 0.35)"};
+      border-bottom: 2px solid ${isDark ? "rgba(255, 220, 0, 0.6)" : "rgba(255, 193, 7, 0.8)"};
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .llmd-highlight:hover {
+      background: ${isDark ? "rgba(255, 220, 0, 0.35)" : "rgba(255, 235, 59, 0.5)"};
+    }
+    
+    .llmd-highlight-stale {
+      background: ${isDark ? "rgba(255, 82, 82, 0.2)" : "rgba(255, 205, 210, 0.5)"};
+      border-bottom: 2px solid ${isDark ? "rgba(244, 67, 54, 0.6)" : "rgba(244, 67, 54, 0.8)"};
+      border-style: dashed;
+    }
+    
+    .highlight-popup {
+      position: absolute;
+      z-index: 1000;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      padding: 8px;
+      display: none;
+    }
+    
+    .highlight-create-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+    }
+    
+    .highlight-create-btn:hover {
+      opacity: 0.9;
+    }
+    
+    .highlight-create-btn:active {
+      transform: translateY(1px);
+    }
+    
     @media (max-width: 768px) {
       body { flex-direction: column; }
       .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
