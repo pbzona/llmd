@@ -261,6 +261,40 @@ const createHandler = (
       }
     }
 
+    // Route: Highlights page
+    if (pathname === "/highlights") {
+      if (!eventService) {
+        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
+        return;
+      }
+
+      try {
+        const directory = url.searchParams.get("directory") || config.directory;
+        const { generateHighlightsPage } = await import("./highlights-template");
+        const db = eventService.getDatabase();
+        const html = generateHighlightsPage({
+          directory,
+          config,
+          files,
+          clientScript,
+          db,
+        });
+        sendResponse(res, 200, htmlHeaders(), html);
+        return;
+      } catch (err) {
+        console.error("[highlights] Failed to generate highlights page:", err);
+        const errorHtml = generateErrorPage({
+          errorCode: 500,
+          message: "Failed to load highlights",
+          files,
+          config,
+          clientScript,
+        });
+        sendResponse(res, 500, htmlHeaders(), errorHtml);
+        return;
+      }
+    }
+
     // Route: Home page (directory index)
     if (pathname === "/") {
       const html = generateIndexPage(files, config, clientScript);
