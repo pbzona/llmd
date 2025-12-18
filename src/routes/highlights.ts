@@ -61,6 +61,7 @@ export const handleCreateHighlight = async (
       startOffset: number;
       endOffset: number;
       highlightedText: string;
+      notes?: string;
     };
 
     // Validate required fields
@@ -106,6 +107,7 @@ export const handleCreateHighlight = async (
       endOffset: body.endOffset,
       highlightedText: body.highlightedText,
       contentHash,
+      notes: body.notes,
     });
 
     sendJson(res, 201, { id: highlightId });

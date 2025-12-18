@@ -195,13 +195,20 @@ export const initializeHighlightsSchema = (db: any): void => {
     CREATE INDEX IF NOT EXISTS idx_highlights_is_stale ON highlights(is_stale);
     CREATE INDEX IF NOT EXISTS idx_highlights_created_at ON highlights(created_at);
   `);
+
+  // Add notes column if it doesn't exist (migration for existing databases)
+  try {
+    db.exec("ALTER TABLE highlights ADD COLUMN notes TEXT");
+  } catch {
+    // Column already exists, ignore error
+  }
 };
 
 // Pure function: get directory path from file path
 export const getDirectoryPath = (filePath: string): string => dirname(filePath);
 
 // Side effect: create highlight in database
-// Parameters: db, resource metadata, offsets, text, hash
+// Parameters: db, resource metadata, offsets, text, hash, optional notes
 // biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const createHighlight = (params: {
   db: any;
@@ -210,6 +217,7 @@ export const createHighlight = (params: {
   endOffset: number;
   highlightedText: string;
   contentHash: string;
+  notes?: string;
 }): string => {
   const highlightId = generateId();
   const timestamp = Date.now();
@@ -218,8 +226,8 @@ export const createHighlight = (params: {
     INSERT INTO highlights (
       id, resource_id, start_offset, end_offset, 
       highlighted_text, content_hash, is_stale, 
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+      notes, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
   `);
 
   stmt.run(
@@ -229,6 +237,7 @@ export const createHighlight = (params: {
     params.endOffset,
     params.highlightedText,
     params.contentHash,
+    params.notes || null,
     timestamp,
     timestamp
   );
@@ -248,13 +257,14 @@ export const getHighlightsByResource = (
   highlightedText: string;
   contentHash: string;
   isStale: boolean;
+  notes: string | null;
   createdAt: number;
   updatedAt: number;
 }> => {
   const stmt = db.prepare(`
     SELECT 
       id, start_offset, end_offset, highlighted_text, 
-      content_hash, is_stale, created_at, updated_at
+      content_hash, is_stale, notes, created_at, updated_at
     FROM highlights
     WHERE resource_id = ?
     ORDER BY start_offset ASC
@@ -267,6 +277,7 @@ export const getHighlightsByResource = (
     highlighted_text: string;
     content_hash: string;
     is_stale: number;
+    notes: string | null;
     created_at: number;
     updated_at: number;
   }>;
@@ -278,6 +289,7 @@ export const getHighlightsByResource = (
     highlightedText: row.highlighted_text,
     contentHash: row.content_hash,
     isStale: row.is_stale === 1,
+    notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -297,6 +309,7 @@ export const getHighlightsByDirectory = (
   highlightedText: string;
   contentHash: string;
   isStale: boolean;
+  notes: string | null;
   createdAt: number;
   updatedAt: number;
 }> => {
@@ -304,7 +317,7 @@ export const getHighlightsByDirectory = (
     SELECT 
       h.id, h.resource_id, r.path as resource_path,
       h.start_offset, h.end_offset, h.highlighted_text, 
-      h.content_hash, h.is_stale, h.created_at, h.updated_at
+      h.content_hash, h.is_stale, h.notes, h.created_at, h.updated_at
     FROM highlights h
     JOIN resources r ON h.resource_id = r.id
     WHERE r.path LIKE ?
@@ -320,6 +333,7 @@ export const getHighlightsByDirectory = (
     highlighted_text: string;
     content_hash: string;
     is_stale: number;
+    notes: string | null;
     created_at: number;
     updated_at: number;
   }>;
@@ -333,6 +347,7 @@ export const getHighlightsByDirectory = (
     highlightedText: row.highlighted_text,
     contentHash: row.content_hash,
     isStale: row.is_stale === 1,
+    notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
