@@ -1,5 +1,84 @@
 // Collapsible directories and table of contents
 
+// Storage key for collapsed directories
+const STORAGE_KEY = "llmd-nav-collapsed";
+
+// Regex for removing trailing slashes (top-level to avoid recreation)
+const TRAILING_SLASH = /\/$/;
+
+// Helper: extract directory name from a dir-item element
+const getDirName = (dirItem: Element): string | null => {
+  const dirLabel = dirItem.querySelector(":scope > .dir-label");
+  if (!dirLabel) {
+    return null;
+  }
+  const spans = Array.from(dirLabel.querySelectorAll("span"));
+  if (spans.length === 0) {
+    return null;
+  }
+  // biome-ignore lint/style/noNonNullAssertion: Length check above ensures element exists
+  // biome-ignore lint/style/useAtIndex: TypeScript target doesn't support .at() method
+  const textSpan = spans[spans.length - 1]!;
+  if (!textSpan.textContent) {
+    return null;
+  }
+  return textSpan.textContent.replace(TRAILING_SLASH, "");
+};
+
+// Helper: get directory path from dir-item element
+const getDirPath = (dirItem: Element): string | null => {
+  const parts: string[] = [];
+  let current: Element | null = dirItem;
+
+  while (current) {
+    const dirName = getDirName(current);
+    if (dirName) {
+      parts.unshift(dirName);
+    }
+    const parentElement = current.parentElement;
+    current = parentElement ? parentElement.closest(".dir-item") : null;
+  }
+
+  return parts.length > 0 ? parts.join("/") : null;
+};
+
+// Helper: save collapsed state to localStorage
+const saveCollapsedState = () => {
+  const collapsedDirs: string[] = [];
+  const dirItems = document.querySelectorAll(".dir-item.collapsed");
+
+  for (const dirItem of Array.from(dirItems)) {
+    const path = getDirPath(dirItem);
+    if (path) {
+      collapsedDirs.push(path);
+    }
+  }
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(collapsedDirs));
+};
+
+// Helper: restore collapsed state from localStorage
+const restoreCollapsedState = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      return;
+    }
+
+    const collapsedDirs: string[] = JSON.parse(saved);
+    const dirItems = document.querySelectorAll(".dir-item");
+
+    for (const dirItem of Array.from(dirItems)) {
+      const path = getDirPath(dirItem);
+      if (path && collapsedDirs.includes(path)) {
+        dirItem.classList.add("collapsed");
+      }
+    }
+  } catch (err) {
+    console.error("[collapsible] Failed to restore state:", err);
+  }
+};
+
 // Initialize collapsible directories
 const initCollapsibleDirectories = () => {
   const dirLabels = document.querySelectorAll(".dir-label");
@@ -21,9 +100,13 @@ const initCollapsibleDirectories = () => {
       const dirItem = label.closest(".dir-item");
       if (dirItem) {
         dirItem.classList.toggle("collapsed");
+        saveCollapsedState();
       }
     });
   }
+
+  // Restore collapsed state after DOM setup
+  restoreCollapsedState();
 };
 
 // Initialize collapsible table of contents
