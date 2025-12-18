@@ -89,9 +89,10 @@ export const initHighlightsSummary = (): void => {
 
                   return `
                     <li style="margin: 8px 0; padding: 8px; background: var(--bg); border-radius: 4px; border-left: 3px solid var(--accent); cursor: pointer; transition: background 0.2s;" 
+                        data-highlight-id="${h.id}"
+                        class="highlight-summary-item"
                         onmouseover="this.style.background='var(--hover)'" 
-                        onmouseout="this.style.background='var(--bg)'"
-                        onclick="(${scrollToHighlight.toString()})('${h.id}')">
+                        onmouseout="this.style.background='var(--bg)'">
                       <div${staleLine}>${previewText}</div>
                       ${notesPreview}
                       <div style="opacity: 0.5; font-size: 12px; margin-top: 4px;">
@@ -117,6 +118,15 @@ export const initHighlightsSummary = (): void => {
         firstHeading.parentNode?.insertBefore(summary, firstHeading);
       } else {
         contentArea.insertBefore(summary, contentArea.firstChild);
+      }
+
+      // Add click handlers to summary items
+      const summaryItems = summary.querySelectorAll(".highlight-summary-item");
+      for (const item of Array.from(summaryItems)) {
+        const highlightId = item.getAttribute("data-highlight-id");
+        if (highlightId) {
+          item.addEventListener("click", () => scrollToHighlight(highlightId));
+        }
       }
     })
     .catch((err) => {

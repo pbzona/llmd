@@ -152,7 +152,10 @@ const showNotesPopup = (highlight: Highlight, e: MouseEvent): void => {
   closeBtn.textContent = "×";
   closeBtn.style.cssText =
     "background: none; border: none; color: var(--fg); cursor: pointer; padding: 0; font-size: 18px; line-height: 1; opacity: 0.7;";
-  closeBtn.addEventListener("click", () => notesPopup.remove());
+  closeBtn.addEventListener("click", (clickEvent) => {
+    clickEvent.stopPropagation();
+    notesPopup.remove();
+  });
 
   header.appendChild(title);
   header.appendChild(closeBtn);
@@ -164,19 +167,25 @@ const showNotesPopup = (highlight: Highlight, e: MouseEvent): void => {
   notesPopup.appendChild(header);
   notesPopup.appendChild(content);
 
+  // Stop propagation on clicks inside popup
+  notesPopup.addEventListener("click", (clickEvent) => {
+    clickEvent.stopPropagation();
+  });
+
   // Position near click
   notesPopup.style.left = `${e.pageX}px`;
   notesPopup.style.top = `${e.pageY + 10}px`;
 
   document.body.appendChild(notesPopup);
 
-  // Close when clicking outside
+  // Close when clicking outside - use a unique handler per popup
   const closeOnClickOutside = (clickEvent: MouseEvent) => {
     if (!notesPopup.contains(clickEvent.target as Node)) {
       notesPopup.remove();
       document.removeEventListener("click", closeOnClickOutside);
     }
   };
+  // Delay to avoid immediate closure from the same click that opened it
   setTimeout(() => {
     document.addEventListener("click", closeOnClickOutside);
   }, 0);
