@@ -12,7 +12,9 @@
       "codeBg": "#0f1729",
       "sidebarBg": "#050811",
       "folderIcon": "#00d4ff",
-      "fileIcon": "#ff00aa"
+      "fileIcon": "#ff00aa",
+      "highlightBg": "#ff00aa",
+      "highlightStaleBg": "#8800aa"
     },
     "forest": {
       "bg": "#1a2f1a",
@@ -23,7 +25,9 @@
       "codeBg": "#243824",
       "sidebarBg": "#152015",
       "folderIcon": "#b7ce63",
-      "fileIcon": "#f9a03f"
+      "fileIcon": "#f9a03f",
+      "highlightBg": "#7fb069",
+      "highlightStaleBg": "#5a8050"
     },
     "ocean": {
       "bg": "#0c1e2e",
@@ -34,7 +38,9 @@
       "codeBg": "#163447",
       "sidebarBg": "#071420",
       "folderIcon": "#81d4fa",
-      "fileIcon": "#ffb74d"
+      "fileIcon": "#ffb74d",
+      "highlightBg": "#4fc3f7",
+      "highlightStaleBg": "#2980b9"
     }
   },
 
