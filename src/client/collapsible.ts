@@ -128,9 +128,7 @@ const initCollapsibleToc = () => {
   tocHeader.style.cursor = "pointer";
   tocHeader.insertBefore(chevron, tocHeader.firstChild);
 
-  // Start collapsed by default
-  toc.classList.add("collapsed");
-
+  // TOC starts collapsed by default (class is already in HTML)
   // Toggle collapsed state on click
   tocHeader.addEventListener("click", () => {
     toc.classList.toggle("collapsed");
