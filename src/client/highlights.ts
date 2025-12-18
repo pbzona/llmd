@@ -15,7 +15,7 @@ type Highlight = {
 let highlights: Highlight[] = [];
 let popup: HTMLElement | null = null;
 let currentSelection: { text: string; range: Range } | null = null;
-let openNotesPopups: Map<string, HTMLElement> = new Map(); // Track open notes popups by highlight ID
+const openNotesPopups: Map<string, HTMLElement> = new Map(); // Track open notes popups by highlight ID
 
 // Initialize highlights on page load
 export const initHighlights = (): void => {
