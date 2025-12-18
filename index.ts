@@ -12,7 +12,9 @@ import {
   cleanupOldEvents,
   clearDatabase,
   disableAnalytics,
+  disableHighlights,
   enableAnalytics,
+  enableHighlights,
   getDatabaseStats,
   saveThemePreferences,
 } from "./src/events";
@@ -151,6 +153,151 @@ const handleDbClear = async (): Promise<void> => {
   }
 };
 
+// Side effect: Handle archive list command
+const handleArchiveList = (): void => {
+  const { listArchiveFiles } = require("./src/highlights");
+  const files = listArchiveFiles();
+
+  if (files.length === 0) {
+    console.log("No backup files in archive\n");
+    return;
+  }
+
+  console.log(`Archive: ${files.length} backup file${files.length === 1 ? "" : "s"}\n`);
+
+  for (const file of files) {
+    const date = new Date(file.mtime).toLocaleString();
+    const sizeMB = (file.size / 1024).toFixed(1);
+    console.log(`  ${file.originalName}`);
+    console.log(`    Modified: ${date}`);
+    console.log(`    Size: ${sizeMB} KB`);
+    console.log(`    Resource ID: ${file.resourceId.slice(0, 8)}...`);
+    console.log();
+  }
+};
+
+// Side effect: Handle archive show command
+const handleArchiveShow = (searchPath: string): void => {
+  const { getArchiveFileDetails } = require("./src/highlights");
+  const details = getArchiveFileDetails(searchPath);
+
+  if (!details) {
+    console.error(`✗ No backup file found for: ${searchPath}\n`);
+    process.exit(1);
+  }
+
+  const date = new Date(details.mtime).toLocaleString();
+  const created = new Date(details.timestamp).toLocaleString();
+  const sizeMB = (details.size / 1024).toFixed(1);
+
+  console.log("\nBackup File Details:\n");
+  console.log(`  Original Name: ${details.originalName}`);
+  console.log(`  Created: ${created}`);
+  console.log(`  Modified: ${date}`);
+  console.log(`  Size: ${sizeMB} KB`);
+  console.log(`  Resource ID: ${details.resourceId}`);
+  console.log(`  Path: ${details.path}`);
+  console.log("\nContent Preview (first 500 characters):\n");
+  console.log(details.content.slice(0, 500));
+  if (details.content.length > 500) {
+    console.log("\n...(truncated)");
+  }
+  console.log();
+};
+
+// Side effect: Handle archive clear command
+const handleArchiveClear = async (): Promise<void> => {
+  const { listArchiveFiles, clearArchive } = require("./src/highlights");
+  const files = listArchiveFiles();
+
+  if (files.length === 0) {
+    console.log("Archive is already empty\n");
+    return;
+  }
+
+  console.log(`⚠️  This will delete ${files.length} backup file${files.length === 1 ? "" : "s"}.`);
+  console.log("   This action cannot be undone.\n");
+
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const answer = await new Promise<string>((resolve) => {
+    rl.question("   Type 'yes' to confirm: ", (ans) => {
+      rl.close();
+      resolve(ans);
+    });
+  });
+
+  if (answer === "yes") {
+    console.log("\n→ Clearing archive...\n");
+    const result = clearArchive();
+    const freedMB = (result.freedBytes / (1024 * 1024)).toFixed(2);
+    console.log(`✓ Deleted ${result.deletedCount} file${result.deletedCount === 1 ? "" : "s"}`);
+    console.log(`  Freed ${freedMB} MB\n`);
+  } else {
+    console.log("\n✗ Cancelled\n");
+  }
+};
+
+// Side effect: Handle export command
+const handleExport = async (directoryPath: string): Promise<void> => {
+  const { getHighlightsByDirectory, generateMarkdownExport, writeMarkdownExport } = await import(
+    "./src/highlights"
+  );
+  const { basename, resolve: resolvePath, join: joinPath } = await import("node:path");
+  const { homedir: getHomedir } = await import("node:os");
+
+  // Resolve the path
+  const absolutePath = resolvePath(directoryPath);
+
+  console.log(`→ Exporting highlights from ${absolutePath}...\n`);
+
+  // Resolve database path (same logic as events.ts)
+  const xdgDataHome = process.env.XDG_DATA_HOME;
+  const baseDir = xdgDataHome || joinPath(getHomedir(), ".local", "share");
+  const dbPath = joinPath(baseDir, "llmd", "llmd.db");
+
+  // Open database
+  const createDatabase = (path: string) => {
+    if (typeof Bun !== "undefined" && (globalThis as any).Bun) {
+      const { Database } = require("bun:sqlite");
+      return new Database(path);
+    }
+    const LibSQL = require("libsql");
+    return new LibSQL(path);
+  };
+
+  const db = createDatabase(dbPath);
+
+  try {
+    // Get highlights
+    const highlights = getHighlightsByDirectory(db, absolutePath);
+
+    if (highlights.length === 0) {
+      console.log("✗ No highlights found in this directory\n");
+      db.close();
+      return;
+    }
+
+    // Generate filename
+    const dateStr = new Date().toISOString().replace(/[:.]/g, "-").split("T")[0];
+    const dirName = basename(absolutePath);
+    const filename = `${dirName}-${dateStr}.md`;
+
+    // Generate and write export
+    const content = generateMarkdownExport(highlights, absolutePath);
+    const exportPath = writeMarkdownExport(content, filename);
+
+    console.log(`✓ Exported ${highlights.length} highlight${highlights.length === 1 ? "" : "s"}`);
+    console.log(`  File: ${exportPath}\n`);
+  } finally {
+    db.close();
+  }
+};
+
 // Main async function
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI coordination requires branching
 const main = async () => {
@@ -177,6 +324,16 @@ const main = async () => {
       process.exit(0);
     }
 
+    if (result.type === "highlights-enable") {
+      enableHighlights();
+      process.exit(0);
+    }
+
+    if (result.type === "highlights-disable") {
+      disableHighlights();
+      process.exit(0);
+    }
+
     if (result.type === "db-check") {
       await handleDbCheck();
       process.exit(0);
@@ -196,6 +353,26 @@ const main = async () => {
       await handleDocsCommand();
       // Keep process running - handleDocsCommand sets up SIGINT handler
       return;
+    }
+
+    if (result.type === "archive-list") {
+      handleArchiveList();
+      process.exit(0);
+    }
+
+    if (result.type === "archive-show") {
+      handleArchiveShow(result.path);
+      process.exit(0);
+    }
+
+    if (result.type === "archive-clear") {
+      await handleArchiveClear();
+      process.exit(0);
+    }
+
+    if (result.type === "export") {
+      await handleExport(result.path);
+      process.exit(0);
     }
 
     // Must be config type

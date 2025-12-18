@@ -24,8 +24,17 @@ export const getClientScript = async (): Promise<string> => {
   }
 };
 
-// Generate inline script tag
+// Check if bundle has inline source maps (for dev mode detection)
+export const hasSourceMaps = async (): Promise<boolean> => {
+  const script = await getClientScript();
+  return script.includes("//# sourceMappingURL=data:application/json;base64,");
+};
+
+// Generate inline script tag (for production)
 export const getClientScriptTag = async (): Promise<string> => {
   const script = await getClientScript();
   return `<script>${script}</script>`;
 };
+
+// Generate external script tag (for development with source maps)
+export const getClientScriptTagExternal = (): string => '<script src="/_client.js"></script>';

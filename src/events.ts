@@ -248,17 +248,25 @@ const setConfigValue = (db: any, key: string, value: string): void => {
 };
 
 // Side effect: check if analytics is enabled
-// Priority: 1) Environment variable, 2) Database config
+// Priority: 1) Environment variable, 2) Database config, 3) Default (enabled)
 // biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 const isAnalyticsEnabled = (db: any): boolean => {
   // Environment variable takes precedence
-  if (process.env.LLMD_ENABLE_EVENTS) {
+  if (process.env.LLMD_ENABLE_EVENTS === "false") {
+    return false;
+  }
+  if (process.env.LLMD_ENABLE_EVENTS === "true") {
     return true;
   }
 
   // Check database config
   const configValue = getConfigValue(db, "analytics_enabled");
-  return configValue === "true";
+
+  // Default to enabled if not explicitly set
+  if (configValue === "false") {
+    return false;
+  }
+  return true; // Default: enabled
 };
 
 // Side effect: initialize event service (creates database, starts scanning)
@@ -613,10 +621,13 @@ export const disableAnalytics = (): void => {
 // Side effect: check analytics status (reads env and database)
 export const getAnalyticsStatus = (): {
   enabled: boolean;
-  source: "environment" | "database" | "disabled";
+  source: "environment" | "database" | "default";
 } => {
   // Check environment variable first
-  if (process.env.LLMD_ENABLE_EVENTS) {
+  if (process.env.LLMD_ENABLE_EVENTS === "false") {
+    return { enabled: false, source: "environment" };
+  }
+  if (process.env.LLMD_ENABLE_EVENTS === "true") {
     return { enabled: true, source: "environment" };
   }
 
@@ -631,11 +642,15 @@ export const getAnalyticsStatus = (): {
     if (configValue === "true") {
       return { enabled: true, source: "database" };
     }
+    if (configValue === "false") {
+      return { enabled: false, source: "database" };
+    }
   } catch {
-    // Database doesn't exist or can't be read
+    // Database doesn't exist or can't be read - use default
   }
 
-  return { enabled: false, source: "disabled" };
+  // Default: enabled
+  return { enabled: true, source: "default" };
 };
 
 // Side effect: save theme preferences to database
@@ -674,6 +689,69 @@ export const loadThemePreferences = (): { theme?: string; fontTheme?: string } =
   } catch {
     // Database doesn't exist or can't be read - return empty
     return {};
+  }
+};
+
+// Side effect: enable highlights (sets database config)
+export const enableHighlights = (): void => {
+  const dbPath = resolveDatabasePath();
+  const db = createDatabase(dbPath);
+
+  // Initialize schema if needed
+  initializeDatabase(db);
+
+  // Set config
+  setConfigValue(db, "highlights_enabled", "true");
+
+  db.close();
+
+  console.log("[highlights] Highlights enabled");
+  console.log(`[highlights] Database: ${dbPath}`);
+};
+
+// Side effect: disable highlights (sets database config)
+export const disableHighlights = (): void => {
+  const dbPath = resolveDatabasePath();
+  const db = createDatabase(dbPath);
+
+  // Initialize schema if needed
+  initializeDatabase(db);
+
+  // Set config
+  setConfigValue(db, "highlights_enabled", "false");
+
+  db.close();
+
+  console.log("[highlights] Highlights disabled");
+};
+
+// Side effect: check if highlights is enabled
+// Priority: 1) Environment variable, 2) Database config, 3) Default (enabled)
+export const isHighlightsEnabled = (): boolean => {
+  // Environment variable takes precedence
+  if (process.env.LLMD_ENABLE_HIGHLIGHTS === "false") {
+    return false;
+  }
+  if (process.env.LLMD_ENABLE_HIGHLIGHTS === "true") {
+    return true;
+  }
+
+  // Check database config
+  try {
+    const dbPath = resolveDatabasePath();
+    const db = createDatabase(dbPath);
+    initializeDatabase(db);
+    const configValue = getConfigValue(db, "highlights_enabled");
+    db.close();
+
+    // Default to enabled if not set
+    if (configValue === "false") {
+      return false;
+    }
+    return true; // Default: enabled
+  } catch {
+    // Database doesn't exist or can't be read - default to enabled
+    return true;
   }
 };
 

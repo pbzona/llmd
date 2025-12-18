@@ -2,6 +2,8 @@
 
 llmd includes built-in usage analytics to help you understand which documentation you actually read. All data is stored locally in a SQLite database - nothing is sent to external servers.
 
+**Analytics is enabled by default.** You can disable it at any time using `llmd analytics disable`.
+
 ## Features
 
 - **Most Viewed Documents** - See which docs you reference most frequently
@@ -37,25 +39,23 @@ You can also access analytics:
 1. **Click the Analytics link** in the sidebar
 2. **Navigate directly** to `http://localhost:<port>/analytics`
 
-### Enable Analytics
+### Enable/Disable Analytics
 
-Enable analytics tracking:
+Analytics is **enabled by default**. You can disable or re-enable it:
 
 ```bash
+# Disable analytics tracking
+llmd analytics disable
+
+# Re-enable analytics tracking
 llmd analytics enable
 ```
 
-This stores the setting in the database at `~/.local/share/llmd/llmd.db`. Analytics will remain enabled until you explicitly disable it.
+The setting is stored in the database at `~/.local/share/llmd/llmd.db` and persists across sessions.
 
-### Disable Analytics
+## Database
 
-Disable analytics tracking:
-
-```bash
-llmd analytics disable
-```
-
-This updates the database configuration. No events will be tracked until you re-enable analytics.
+The database stores both analytics events and highlights data at `~/.local/share/llmd/llmd.db`.
 
 ### Database Management
 

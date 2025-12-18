@@ -140,8 +140,34 @@ const checkThemeContrast = (themeName: string): void => {
   console.log(`   Ratio: ${formatRatio(hoverRatio, WCAG_AA_NORMAL)}`);
   console.log(`   ${getStatus(hoverRatio, WCAG_AA_NORMAL)}`);
 
+  // Check highlight text contrast (fg on highlightBg with 25% opacity)
+  // Note: We check against the base highlight color since opacity is applied via CSS
+  const highlightRatio = getContrastRatio(colors.fg, colors.highlightBg);
+  console.log(`\n✨ Highlight Text (fg on highlightBg):`);
+  console.log(`   ${colors.fg} on ${colors.highlightBg}`);
+  console.log(`   Ratio: ${formatRatio(highlightRatio, WCAG_AA_NORMAL)}`);
+  console.log(`   ${getStatus(highlightRatio, WCAG_AA_NORMAL)}`);
+  console.log(`   Note: Actual contrast will be better due to 25% opacity blend with bg`);
+
+  // Check stale highlight text contrast
+  const staleHighlightRatio = getContrastRatio(colors.fg, colors.highlightStaleBg);
+  console.log(`\n⚠️  Stale Highlight Text (fg on highlightStaleBg):`);
+  console.log(`   ${colors.fg} on ${colors.highlightStaleBg}`);
+  console.log(`   Ratio: ${formatRatio(staleHighlightRatio, WCAG_AA_NORMAL)}`);
+  console.log(`   ${getStatus(staleHighlightRatio, WCAG_AA_NORMAL)}`);
+  console.log(`   Note: Actual contrast will be better due to 20% opacity blend with bg`);
+
   // Overall score
-  const checks = [fgBgRatio, accentRatio, accentLinkRatio, codeRatio, sidebarRatio, hoverRatio];
+  const checks = [
+    fgBgRatio,
+    accentRatio,
+    accentLinkRatio,
+    codeRatio,
+    sidebarRatio,
+    hoverRatio,
+    highlightRatio,
+    staleHighlightRatio,
+  ];
   const passing = checks.filter((r) => r >= WCAG_AA_NORMAL).length;
   const total = checks.length;
   const percentage = Math.round((passing / total) * 100);

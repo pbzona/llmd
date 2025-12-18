@@ -37,8 +37,15 @@ export type ParsedArgs = {
     version?: boolean;
     analytics?: boolean;
     analyticsSubcommand?: "view" | "enable" | "disable";
+    highlights?: boolean;
+    highlightsSubcommand?: "enable" | "disable";
     db?: boolean;
     dbSubcommand?: "check" | "cleanup" | "clear";
+    archive?: boolean;
+    archiveSubcommand?: "list" | "show" | "clear";
+    archivePath?: string; // For 'archive show <path>'
+    export?: boolean;
+    exportPath?: string; // For 'export [path]'
     days?: number;
     docs?: boolean;
   };
@@ -48,9 +55,15 @@ export type CliResult =
   | { type: "config"; config: Config }
   | { type: "analytics-enable" }
   | { type: "analytics-disable" }
+  | { type: "highlights-enable" }
+  | { type: "highlights-disable" }
   | { type: "db-check" }
   | { type: "db-cleanup"; days: number }
   | { type: "db-clear" }
+  | { type: "archive-list" }
+  | { type: "archive-show"; path: string }
+  | { type: "archive-clear" }
+  | { type: "export"; path: string }
   | { type: "docs" }
   | { type: "exit" };
 

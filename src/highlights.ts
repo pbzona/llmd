@@ -209,7 +209,6 @@ export const getDirectoryPath = (filePath: string): string => dirname(filePath);
 
 // Side effect: create highlight in database
 // Parameters: db, resource metadata, offsets, text, hash, optional notes
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const createHighlight = (params: {
   db: any;
   resourceId: string;
@@ -514,4 +513,95 @@ export const writeMarkdownExport = (content: string, filename: string): string =
   writeFileSync(filePath, content, "utf-8");
 
   return filePath;
+};
+
+// Archive management functions
+
+// Side effect: list all backup files in the archive
+export const listArchiveFiles = (): Array<{
+  path: string;
+  size: number;
+  mtime: number;
+  resourceId: string;
+  timestamp: number;
+  originalName: string;
+}> => {
+  const { readdirSync, statSync } = require("node:fs");
+  const cacheDir = resolveCacheDirectory();
+
+  if (!existsSync(cacheDir)) {
+    return [];
+  }
+
+  const files = readdirSync(cacheDir) as string[];
+
+  return files
+    .filter((file: string) => file.endsWith(".md"))
+    .map((file: string) => {
+      const filePath = join(cacheDir, file);
+      const stats = statSync(filePath);
+
+      // Parse filename: {resourceId}_{timestamp}_{originalName}
+      const parts = file.split("_");
+      const resourceId = parts[0] || "";
+      const timestamp = Number.parseInt(parts[1] || "0", 10);
+      const originalName = parts.slice(2).join("_");
+
+      return {
+        path: filePath,
+        size: stats.size,
+        mtime: stats.mtimeMs,
+        resourceId,
+        timestamp,
+        originalName,
+      };
+    })
+    .sort((a, b) => b.mtime - a.mtime); // Most recent first
+};
+
+// Side effect: get details for a specific backup file
+export const getArchiveFileDetails = (
+  searchPath: string
+): {
+  path: string;
+  size: number;
+  mtime: number;
+  resourceId: string;
+  timestamp: number;
+  originalName: string;
+  content: string;
+} | null => {
+  const { readFileSync } = require("node:fs");
+  const allFiles = listArchiveFiles();
+
+  // Find file by original name or resource ID
+  const file = allFiles.find(
+    (f) => f.originalName === searchPath || f.resourceId === searchPath || f.path === searchPath
+  );
+
+  if (!file) {
+    return null;
+  }
+
+  const content = readFileSync(file.path, "utf-8") as string;
+
+  return {
+    ...file,
+    content,
+  };
+};
+
+// Side effect: clear all backup files from the archive
+export const clearArchive = (): { deletedCount: number; freedBytes: number } => {
+  const { rmSync } = require("node:fs");
+  const files = listArchiveFiles();
+  const freedBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const deletedCount = files.length;
+
+  // Delete each file
+  for (const file of files) {
+    rmSync(file.path);
+  }
+
+  return { deletedCount, freedBytes };
 };

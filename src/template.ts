@@ -23,6 +23,8 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       --accent: ${colors.accent};
       --code-bg: ${colors.codeBg};
       --sidebar-bg: ${colors.sidebarBg};
+      --highlight-bg: ${colors.highlightBg};
+      --highlight-stale-bg: ${colors.highlightStaleBg};
     }
     
     body {
@@ -33,6 +35,7 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       background: var(--bg);
       display: flex;
       min-height: 100vh;
+      position: relative;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
@@ -237,6 +240,26 @@ const getStyles = (themeName: string, fontTheme: string): string => {
     
     .sidebar-nav > ul > li > a::before {
       display: none;
+    }
+    
+    /* Admin Section */
+    .admin-header:hover {
+      background: ${isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)"};
+    }
+    
+    .admin-section.collapsed .admin-list {
+      max-height: 0;
+      overflow: hidden;
+      margin: 0;
+      opacity: 0;
+    }
+    
+    .admin-section.collapsed .admin-toggle {
+      transform: rotate(-90deg);
+    }
+    
+    .admin-list a:hover {
+      background: ${isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)"};
     }
     
     .main {
@@ -523,19 +546,19 @@ const getStyles = (themeName: string, fontTheme: string): string => {
     
     /* Highlights */
     .llmd-highlight {
-      background: ${isDark ? "rgba(255, 220, 0, 0.25)" : "rgba(255, 235, 59, 0.35)"};
-      border-bottom: 2px solid ${isDark ? "rgba(255, 220, 0, 0.6)" : "rgba(255, 193, 7, 0.8)"};
+      background: color-mix(in srgb, var(--highlight-bg) 25%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--highlight-bg) 60%, ${isDark ? "#000" : "#fff"});
       cursor: pointer;
       transition: background 0.2s;
     }
     
     .llmd-highlight:hover {
-      background: ${isDark ? "rgba(255, 220, 0, 0.35)" : "rgba(255, 235, 59, 0.5)"};
+      background: color-mix(in srgb, var(--highlight-bg) 35%, transparent);
     }
     
     .llmd-highlight-stale {
-      background: ${isDark ? "rgba(255, 82, 82, 0.2)" : "rgba(255, 205, 210, 0.5)"};
-      border-bottom: 2px solid ${isDark ? "rgba(244, 67, 54, 0.6)" : "rgba(244, 67, 54, 0.8)"};
+      background: color-mix(in srgb, var(--highlight-stale-bg) 20%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--highlight-stale-bg) 60%, ${isDark ? "#000" : "#fff"});
       border-style: dashed;
     }
     
@@ -689,13 +712,18 @@ const renderTreeNodes = (nodes: TreeNode[], currentPath?: string): string =>
     })
     .join("\n");
 
-// Pure function: generate special pages section
-const generateSpecialPages = (): string => `
-  <div style="padding: 12px 12px 8px 12px; margin-top: 8px; border-top: 1px solid var(--border);">
-    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; opacity: 0.5; margin-bottom: 8px; padding-left: 6px;">
-      Special Pages
+// Pure function: generate admin section (collapsible)
+const generateAdminSection = (): string => `
+  <div class="admin-section" style="padding: 12px 12px 8px 12px; border-bottom: 1px solid var(--border);">
+    <div class="admin-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: background 0.15s; user-select: none;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; opacity: 0.5;">
+        Admin
+      </div>
+      <svg class="admin-toggle" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; transition: transform 0.2s;">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
     </div>
-    <ul style="list-style: none; padding: 0; margin: 0;">
+    <ul class="admin-list" style="list-style: none; padding: 0; margin: 8px 0 0 0; transition: all 0.2s;">
       <li>
         <a href="/analytics" class="depth-0" style="display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 6px; color: var(--fg); text-decoration: none; border-radius: 6px; font-size: 0.9375rem; transition: background 0.15s;">
           ${ANALYTICS_ICON}
@@ -714,12 +742,12 @@ const generateSpecialPages = (): string => `
 
 // Pure function: generate file tree sidebar HTML
 const generateSidebar = (files: MarkdownFile[], currentPath?: string): string => {
-  const specialPages = generateSpecialPages();
+  const adminSection = generateAdminSection();
 
   if (files.length === 0) {
     return `<div class="sidebar-nav">
+      ${adminSection}
       <p style="padding: 12px; color: #b3b3b3;">No markdown files found</p>
-      ${specialPages}
     </div>`;
   }
 
@@ -727,8 +755,8 @@ const generateSidebar = (files: MarkdownFile[], currentPath?: string): string =>
   const items = renderTreeNodes(tree, currentPath);
 
   return `<nav class="sidebar-nav">
+    ${adminSection}
     <ul>${items}</ul>
-    ${specialPages}
   </nav>`;
 };
 
@@ -795,12 +823,6 @@ export const baseLayout = (options: LayoutOptions): string => {
                 fill="none"/>
         </svg>
         llmd
-        <a href="/analytics" style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 8px; color: var(--fg); opacity: 0.5; text-decoration: none; transition: opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'" title="Analytics">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 3v18h18"></path>
-            <path d="M18 17l-4-4-4 4-4-4"></path>
-          </svg>
-        </a>
       </h1>
     </div>
     ${generateSidebar(files, currentPath)}

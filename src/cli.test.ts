@@ -47,6 +47,22 @@ describe("parseArgs", () => {
     expect(viewResult.flags.analyticsSubcommand).toBe("view");
   });
 
+  test("parses highlights subcommands", () => {
+    const enableResult = parseArgs(["highlights", "enable"]);
+    expect(enableResult.flags.highlights).toBe(true);
+    expect(enableResult.flags.highlightsSubcommand).toBe("enable");
+
+    const disableResult = parseArgs(["highlights", "disable"]);
+    expect(disableResult.flags.highlights).toBe(true);
+    expect(enableResult.flags.highlightsSubcommand).toBe("enable");
+  });
+
+  test("defaults to enable when highlights called without subcommand", () => {
+    const result = parseArgs(["highlights"]);
+    expect(result.flags.highlights).toBe(true);
+    expect(result.flags.highlightsSubcommand).toBe("enable");
+  });
+
   test("parses db subcommands", () => {
     const checkResult = parseArgs(["db", "check"]);
     expect(checkResult.flags.db).toBe(true);
@@ -74,6 +90,44 @@ describe("parseArgs", () => {
   test("handles invalid --days value", () => {
     const result = parseArgs(["db", "cleanup", "--days", "invalid"]);
     expect(result.flags.days).toBe(30); // Should default to 30
+  });
+
+  test("parses archive subcommands", () => {
+    const listResult = parseArgs(["archive", "list"]);
+    expect(listResult.flags.archive).toBe(true);
+    expect(listResult.flags.archiveSubcommand).toBe("list");
+
+    const showResult = parseArgs(["archive", "show", "README.md"]);
+    expect(showResult.flags.archive).toBe(true);
+    expect(showResult.flags.archiveSubcommand).toBe("show");
+    expect(showResult.flags.archivePath).toBe("README.md");
+
+    const clearResult = parseArgs(["archive", "clear"]);
+    expect(clearResult.flags.archive).toBe(true);
+    expect(clearResult.flags.archiveSubcommand).toBe("clear");
+  });
+
+  test("defaults to list when archive called without subcommand", () => {
+    const result = parseArgs(["archive"]);
+    expect(result.flags.archive).toBe(true);
+    expect(result.flags.archiveSubcommand).toBe("list");
+  });
+
+  test("parses export command", () => {
+    const withPathResult = parseArgs(["export", "./docs"]);
+    expect(withPathResult.flags.export).toBe(true);
+    expect(withPathResult.flags.exportPath).toBe("./docs");
+
+    const withoutPathResult = parseArgs(["export"]);
+    expect(withoutPathResult.flags.export).toBe(true);
+    expect(withoutPathResult.flags.exportPath).toBeUndefined();
+  });
+
+  test("does not parse flags as export path", () => {
+    const result = parseArgs(["export", "--theme", "dark"]);
+    expect(result.flags.export).toBe(true);
+    expect(result.flags.exportPath).toBeUndefined();
+    expect(result.flags.theme).toBe("dark");
   });
 });
 

@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
-import { getClientScriptTag } from "./client-assets";
+import { getClientScript, getClientScriptTag, getClientScriptTagExternal, hasSourceMaps } from "./client-assets";
 import { initEventService } from "./events";
 import { processMarkdown } from "./markdown";
 import { handleApiRoute } from "./routes/api";
@@ -185,6 +185,22 @@ const createHandler = (
       return;
     }
 
+    // Route: Client JavaScript bundle
+    if (pathname === "/_client.js") {
+      try {
+        const clientJs = await getClientScript();
+        res.writeHead(200, {
+          "Content-Type": "application/javascript",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        });
+        res.end(clientJs);
+        return;
+      } catch {
+        sendResponse(res, 404, { "Content-Type": "text/plain" }, "Client script not found");
+        return;
+      }
+    }
+
     // Route: Favicon
     if (pathname === "/_favicon") {
       try {
@@ -351,7 +367,9 @@ export const startServer = async (config: Config, files: MarkdownFile[]) => {
   }
 
   // Bundle client scripts once at startup
-  const clientScript = await getClientScriptTag();
+  // Use external script tag if source maps are available (dev mode)
+  const devMode = await hasSourceMaps();
+  const clientScript = devMode ? getClientScriptTagExternal() : await getClientScriptTag();
 
   const server = createServer(createHandler(config, files, clientScript, eventService));
 

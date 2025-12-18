@@ -15,6 +15,9 @@ export type ThemeColors = {
   // Icon colors
   folderIcon: string;
   fileIcon: string;
+  // Highlight colors (borders will be derived using relative CSS colors)
+  highlightBg: string; // Background color for valid highlights
+  highlightStaleBg: string; // Background color for stale highlights
 };
 
 // Built-in color themes
@@ -30,6 +33,8 @@ const BUILT_IN_THEMES: Record<string, ThemeColors> = {
     sidebarBg: "#151515",
     folderIcon: "#a78bfa",
     fileIcon: "#fbbf24",
+    highlightBg: "#ffdc00",
+    highlightStaleBg: "#ff5252",
   },
   // Original light theme
   light: {
@@ -42,6 +47,8 @@ const BUILT_IN_THEMES: Record<string, ThemeColors> = {
     sidebarBg: "#eee9e3",
     folderIcon: "#2563eb",
     fileIcon: "#f97316",
+    highlightBg: "#ffeb3b",
+    highlightStaleBg: "#ffcdd2",
   },
   // New: Nord-inspired theme
   nord: {
@@ -54,6 +61,8 @@ const BUILT_IN_THEMES: Record<string, ThemeColors> = {
     sidebarBg: "#2e3440",
     folderIcon: "#81a1c1",
     fileIcon: "#ebcb8b",
+    highlightBg: "#ebcb8b", // Nord yellow
+    highlightStaleBg: "#bf616a", // Nord red
   },
   // New: Dracula-inspired theme
   dracula: {
@@ -66,6 +75,8 @@ const BUILT_IN_THEMES: Record<string, ThemeColors> = {
     sidebarBg: "#21222c",
     folderIcon: "#bd93f9",
     fileIcon: "#ffb86c",
+    highlightBg: "#f1fa8c", // Dracula yellow
+    highlightStaleBg: "#ff5555", // Dracula red
   },
   // New: Solarized Light (with improved contrast)
   solarized: {
@@ -78,6 +89,8 @@ const BUILT_IN_THEMES: Record<string, ThemeColors> = {
     sidebarBg: "#eee8d5",
     folderIcon: "#859900", // Green
     fileIcon: "#dc322f", // Red for better contrast than orange
+    highlightBg: "#b58900", // Solarized yellow
+    highlightStaleBg: "#dc322f", // Solarized red
   },
   // New: Monokai-inspired theme
   monokai: {
@@ -90,6 +103,8 @@ const BUILT_IN_THEMES: Record<string, ThemeColors> = {
     sidebarBg: "#1e1f1c",
     folderIcon: "#a6e22e",
     fileIcon: "#fd971f",
+    highlightBg: "#e6db74", // Monokai yellow
+    highlightStaleBg: "#f92672", // Monokai pink/red
   },
 };
 
@@ -136,6 +151,8 @@ const loadCustomThemes = (): Record<string, ThemeColors> => {
         "sidebarBg",
         "folderIcon",
         "fileIcon",
+        "highlightBg",
+        "highlightStaleBg",
       ];
 
       const hasAllProps = requiredProps.every((prop) => typeof t[prop] === "string");
