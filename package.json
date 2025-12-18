@@ -1,6 +1,6 @@
 {
   "name": "llmd",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local markdown server for LLM-generated docs",
   "author": "Phil Zona <phil.b.zona@gmail.com>",
   "license": "MIT",
@@ -31,7 +31,7 @@
   "scripts": {
     "dev": "bun --hot index.ts",
     "test": "bun test",
-    "build": "rm -f dist/llmd dist/llmd.js* llmd.js* dist/client.js && mkdir -p dist && bun build --target=browser --minify ./src/client-bundle.ts --outfile=dist/client.js && bun build --target=node --minify --sourcemap ./index.ts --outfile=llmd.js && mv llmd.js* dist/ && sed -i.bak '1s|#!/usr/bin/env bun|#!/usr/bin/env node|' dist/llmd.js && rm -f dist/llmd.js.bak && mv dist/llmd.js dist/llmd && chmod +x dist/llmd",
+    "build": "rm -f dist/llmd dist/llmd.js* llmd.js* dist/client.js && mkdir -p dist && bun build --target=browser --minify ./src/client-bundle.ts --outfile=dist/client.js && bun build --target=node --minify --sourcemap --external better-sqlite3 ./index.ts --outfile=llmd.js && mv llmd.js* dist/ && sed -i.bak '1s|#!/usr/bin/env bun|#!/usr/bin/env node|' dist/llmd.js && rm -f dist/llmd.js.bak && mv dist/llmd.js dist/llmd && chmod +x dist/llmd",
     "prepublishOnly": "bun test && bun run build",
     "preview": "bun scripts/generate-preview.ts",
     "check-contrast": "bun scripts/check-contrast.ts",

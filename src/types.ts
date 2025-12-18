@@ -13,6 +13,7 @@ export type Config = {
   // Behavior flags
   open: boolean;
   watch: boolean;
+  openToAnalytics?: boolean;
 };
 
 export type MarkdownFile = {
@@ -34,6 +35,7 @@ export type ParsedArgs = {
     watch?: boolean;
     help?: boolean;
     version?: boolean;
+    analytics?: boolean;
   };
 };
 
@@ -44,4 +46,41 @@ export type ScanOptions = {
   maxDepth: number;
   // Directories to ignore
   ignore: string[];
+};
+
+// Event tracking types
+export type ResourceType = "file" | "dir";
+export type EventType = "view" | "open";
+
+export type Resource = {
+  id: string; // UUID
+  path: string; // Absolute path
+  type: ResourceType;
+  created_at: number; // Unix timestamp (ms)
+};
+
+export type Event = {
+  id: string; // UUID
+  type: EventType;
+  resource_id: string;
+  timestamp: number; // Unix timestamp (ms)
+};
+
+export type AnalyticsData = {
+  currentDirectory: string;
+  mostViewed: Array<{ path: string; name: string; views: number }>;
+  timeSeries: Array<{ date: string; count: number }>;
+  zeroViews: Array<{ path: string; name: string }>;
+  totalEvents: number;
+  totalResources: number;
+};
+
+export type EventService = {
+  recordEvent: (type: EventType, absolutePath: string, resourceType: ResourceType) => void;
+  getAnalytics: (directory?: string) => Promise<AnalyticsData>;
+  getActivityTimeSeries: (
+    directory: string | null,
+    days: number
+  ) => Promise<Array<{ date: string; count: number }>>;
+  close: () => void;
 };

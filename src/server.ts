@@ -6,9 +6,10 @@ import { join } from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { getClientScriptTag } from "./client-assets";
+import { initEventService } from "./events";
 import { processMarkdown } from "./markdown";
 import { generateErrorPage, generateIndexPage, generateMarkdownPage } from "./template";
-import type { Config, MarkdownFile } from "./types";
+import type { Config, EventService, MarkdownFile } from "./types";
 import { unwatchFile, watchFile } from "./watcher";
 
 // Pure function: create HTML response headers with cache control
@@ -56,6 +57,15 @@ const MD_EXTENSION = /\.md$/;
 
 // Helper: extract theme/font from filename (for preview mode)
 // Format: theme-font.md (e.g., "dark-modern.md", "nord-classic.md")
+//
+// IMPORTANT: This extraction ALWAYS takes precedence over CLI flags when a match is found.
+// This enables the preview generation workflow where each file demonstrates a different theme/font:
+// - "nord-modern.md" → forces nord theme + modern font
+// - "dark.md" → only extracts theme (font falls back to CLI or default)
+// - "modern.md" → only extracts font (theme falls back to CLI or default)
+// - "preview-1.md" → no extraction (CLI flags apply to all files)
+//
+// See scripts/generate-preview.ts for the preview generation workflow.
 const extractPreviewConfig = (filename: string): { theme?: string; font?: string } | null => {
   // Remove .md extension
   const nameWithoutExt = filename.replace(MD_EXTENSION, "");
@@ -131,8 +141,30 @@ const handleMarkdownView = async (
   }
 };
 
+// Helper: parse JSON body from request
+const parseJsonBody = (req: import("node:http").IncomingMessage): Promise<unknown> =>
+  new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(body));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+
 // Pure function: create request handler
-const createHandler = (config: Config, files: MarkdownFile[], clientScript: string) => {
+const createHandler = (
+  config: Config,
+  files: MarkdownFile[],
+  clientScript: string,
+  eventService: EventService | null
+) => {
   return async (
     req: import("node:http").IncomingMessage,
     res: import("node:http").ServerResponse
@@ -145,6 +177,94 @@ const createHandler = (config: Config, files: MarkdownFile[], clientScript: stri
     if (shouldLog) {
       const timestamp = new Date().toISOString().split("T")[1]?.split(".")[0];
       console.log(`[${timestamp}] ${req.method} ${pathname}`);
+    }
+
+    // Route: POST /api/events - Record event
+    if (pathname === "/api/events" && req.method === "POST") {
+      if (!eventService) {
+        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
+        return;
+      }
+
+      try {
+        const body = (await parseJsonBody(req)) as {
+          type: "view" | "open";
+          path: string;
+          resourceType: "file" | "dir";
+        };
+
+        // Convert relative path to absolute
+        const absolutePath = body.path.startsWith("/")
+          ? body.path
+          : join(config.directory, body.path);
+
+        eventService.recordEvent(body.type, absolutePath, body.resourceType);
+        sendResponse(res, 204, {}, "");
+        return;
+      } catch (err) {
+        console.error("[events] Failed to record event:", err);
+        sendResponse(res, 400, { "Content-Type": "text/plain" }, "Invalid request");
+        return;
+      }
+    }
+
+    // Route: GET /api/analytics - Get analytics data
+    if (pathname === "/api/analytics" && req.method === "GET") {
+      if (!eventService) {
+        sendResponse(
+          res,
+          501,
+          { "Content-Type": "application/json" },
+          JSON.stringify({ error: "Events disabled" })
+        );
+        return;
+      }
+
+      try {
+        const directory = url.searchParams.get("directory") || undefined;
+        const analytics = await eventService.getAnalytics(directory);
+        sendResponse(res, 200, { "Content-Type": "application/json" }, JSON.stringify(analytics));
+        return;
+      } catch (err) {
+        console.error("[events] Failed to get analytics:", err);
+        sendResponse(
+          res,
+          500,
+          { "Content-Type": "application/json" },
+          JSON.stringify({ error: "Failed to get analytics" })
+        );
+        return;
+      }
+    }
+
+    // Route: GET /api/analytics/timeseries - Get time series data
+    if (pathname === "/api/analytics/timeseries" && req.method === "GET") {
+      if (!eventService) {
+        sendResponse(
+          res,
+          501,
+          { "Content-Type": "application/json" },
+          JSON.stringify({ error: "Events disabled" })
+        );
+        return;
+      }
+
+      try {
+        const directory = url.searchParams.get("directory");
+        const days = Number.parseInt(url.searchParams.get("days") || "7", 10);
+        const timeSeries = await eventService.getActivityTimeSeries(directory, days);
+        sendResponse(res, 200, { "Content-Type": "application/json" }, JSON.stringify(timeSeries));
+        return;
+      } catch (err) {
+        console.error("[events] Failed to get timeseries:", err);
+        sendResponse(
+          res,
+          500,
+          { "Content-Type": "application/json" },
+          JSON.stringify({ error: "Failed to get timeseries" })
+        );
+        return;
+      }
     }
 
     // Route: Favicon
@@ -176,6 +296,49 @@ const createHandler = (config: Config, files: MarkdownFile[], clientScript: stri
         return;
       } catch {
         sendResponse(res, 404, { "Content-Type": "text/plain" }, "Font not found");
+        return;
+      }
+    }
+
+    // Route: Analytics page
+    if (pathname === "/analytics") {
+      if (!eventService) {
+        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
+        return;
+      }
+
+      try {
+        const showAllHistory = url.searchParams.get("all") === "true";
+        const directory = showAllHistory
+          ? undefined
+          : url.searchParams.get("directory") || config.directory;
+
+        const analytics = await eventService.getAnalytics(directory);
+        const timeSeries = await eventService.getActivityTimeSeries(directory || null, 7);
+
+        // Merge timeSeries into analytics
+        analytics.timeSeries = timeSeries;
+
+        const { generateAnalyticsPage } = await import("./analytics-template");
+        const html = generateAnalyticsPage({
+          data: analytics,
+          config,
+          files,
+          clientScript,
+          showAllHistory,
+        });
+        sendResponse(res, 200, htmlHeaders(), html);
+        return;
+      } catch (err) {
+        console.error("[analytics] Failed to generate analytics page:", err);
+        const errorHtml = generateErrorPage({
+          errorCode: 500,
+          message: "Failed to load analytics",
+          files,
+          config,
+          clientScript,
+        });
+        sendResponse(res, 500, htmlHeaders(), errorHtml);
         return;
       }
     }
@@ -227,10 +390,18 @@ const handleWebSocketMessage = (
 
 // Public function: start server
 export const startServer = async (config: Config, files: MarkdownFile[]) => {
+  // Initialize event service
+  const eventService = initEventService(config);
+
+  // Record "open" event for root directory
+  if (eventService) {
+    eventService.recordEvent("open", config.directory, "dir");
+  }
+
   // Bundle client scripts once at startup
   const clientScript = await getClientScriptTag();
 
-  const server = createServer(createHandler(config, files, clientScript));
+  const server = createServer(createHandler(config, files, clientScript, eventService));
 
   // Setup WebSocket server if watch is enabled
   let wss: WebSocketServer | undefined;
@@ -282,6 +453,7 @@ export const startServer = async (config: Config, files: MarkdownFile[]) => {
     hostname: "localhost",
     port: actualPort,
     stop: () => {
+      eventService?.close();
       wss?.close();
       server.close();
     },

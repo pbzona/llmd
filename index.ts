@@ -32,9 +32,11 @@ const main = async () => {
     const server = await startServer(config, files);
     const url = getServerUrl(server);
 
-    // Determine initial URL (open to specific file if provided)
+    // Determine initial URL (open to specific file or analytics if requested)
     let initialUrl = url;
-    if (config.initialFile) {
+    if (config.openToAnalytics) {
+      initialUrl = `${url}/analytics`;
+    } else if (config.initialFile) {
       const relativePath = getRelativePath(config.initialFile, config.directory);
       initialUrl = `${url}/view/${relativePath}`;
     }
@@ -42,7 +44,9 @@ const main = async () => {
     console.log(`▸ Server running at ${url}`);
     console.log(`  Theme: ${config.theme}`);
 
-    if (config.initialFile) {
+    if (config.openToAnalytics) {
+      console.log("  Opening: Analytics");
+    } else if (config.initialFile) {
       const relativePath = getRelativePath(config.initialFile, config.directory);
       console.log(`  Opening: ${relativePath}`);
     }

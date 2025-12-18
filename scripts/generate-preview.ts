@@ -1,12 +1,26 @@
 #!/usr/bin/env bun
 
 /**
- * Generate preview pages for all font/color theme combinations
+ * Generate preview pages for font/color theme combinations
  *
  * Usage:
  *   bun scripts/generate-preview.ts
+ *     → Generates theme-font.md files for all themes × default fonts (sans, modern)
+ *
  *   bun scripts/generate-preview.ts --font modern
+ *     → Generates {theme}.md files for all themes with 'modern' font
+ *
  *   bun scripts/generate-preview.ts --theme nord
+ *     → Generates {font}.md files for all fonts with 'nord' theme
+ *
+ *   bun scripts/generate-preview.ts --theme nord --font modern
+ *     → Generates preview-1.md file for single nord+modern combination
+ *     → Run server with: node dist/llmd preview-output --theme nord --fonts modern
+ *
+ * How it works:
+ *   The server's extractPreviewConfig() function (src/server.ts) extracts theme/font
+ *   from filenames that match specific patterns. Filename-based config ALWAYS overrides
+ *   CLI flags, enabling each file to demonstrate a different theme/font combination.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -310,21 +324,25 @@ if (selectedTheme && !THEMES.includes(selectedTheme)) {
 
 // Determine what to generate
 let combinations: Array<{ font: string; theme: string }> = [];
+let useFilenameFormat = false;
 
 if (selectedFont && selectedTheme) {
-  // Single combination
+  // Single combination - generate simple numbered files
   combinations = [{ font: selectedFont, theme: selectedTheme }];
+  useFilenameFormat = false;
 } else if (selectedFont) {
-  // All themes for one font
+  // All themes for one font - use theme names in filename
   combinations = THEMES.map((theme) => ({ font: selectedFont, theme }));
+  useFilenameFormat = true;
 } else if (selectedTheme) {
-  // All fonts for one theme
+  // All fonts for one theme - use font names in filename
   combinations = FONTS.map((font) => ({ font, theme: selectedTheme }));
+  useFilenameFormat = true;
 } else {
-  // Default: generate for a sensible subset
-  // Pick 2 fonts and show all themes
+  // Default: generate for a sensible subset with theme-font format
   const defaultFonts = ["sans", "modern"];
   combinations = defaultFonts.flatMap((font) => THEMES.map((theme) => ({ font, theme })));
+  useFilenameFormat = true;
 }
 
 // Create output directory
@@ -333,8 +351,30 @@ if (!existsSync(outputDir)) {
 }
 
 // Generate a kitchen sink markdown for each combination
-for (const { font, theme } of combinations) {
-  const filename = `${theme}-${font}.md`;
+for (let i = 0; i < combinations.length; i += 1) {
+  const combo = combinations[i];
+  if (!combo) {
+    continue;
+  }
+
+  const { font, theme } = combo;
+
+  // Determine filename based on generation mode
+  let filename: string;
+  if (!useFilenameFormat) {
+    // Single combination: use simple numbered name
+    filename = `preview-${i + 1}.md`;
+  } else if (selectedFont) {
+    // All themes for one font: use theme name
+    filename = `${theme}.md`;
+  } else if (selectedTheme) {
+    // All fonts for one theme: use font name
+    filename = `${font}.md`;
+  } else {
+    // Default: theme-font format
+    filename = `${theme}-${font}.md`;
+  }
+
   const title = `${theme.charAt(0).toUpperCase() + theme.slice(1)} + ${font.charAt(0).toUpperCase() + font.slice(1)}`;
 
   const content = `# ${title}
@@ -347,19 +387,36 @@ ${KITCHEN_SINK_MD.split("\n").slice(4).join("\n")}`; // Skip first few lines (ti
 }
 
 // Generate index with instructions
+let indexExplanation = "";
+if (!useFilenameFormat) {
+  indexExplanation = `Each file demonstrates the \`${selectedTheme}\` theme with \`${selectedFont}\` fonts.
+
+When you run llmd with both \`--theme\` and \`--fonts\` flags, those settings apply to ALL files.`;
+} else if (selectedFont) {
+  indexExplanation = `Each file demonstrates the \`${selectedFont}\` fonts with different themes.
+
+Files are named by theme (e.g., \`nord.md\`, \`dark.md\`) and the server extracts the theme from the filename.`;
+} else if (selectedTheme) {
+  indexExplanation = `Each file demonstrates the \`${selectedTheme}\` theme with different fonts.
+
+Files are named by font (e.g., \`modern.md\`, \`classic.md\`) and the server extracts the font from the filename.`;
+} else {
+  indexExplanation = `Each markdown file in the sidebar automatically applies its own theme and font based on its filename.
+
+**Format:** \`{theme}-{font}.md\`
+
+For example:
+- \`dark-modern.md\` uses the \`dark\` theme with \`modern\` fonts
+- \`nord-classic.md\` uses the \`nord\` theme with \`classic\` fonts`;
+}
+
 const indexContent = `# llmd Theme Preview
 
 This directory contains ${combinations.length} preview documents, each demonstrating a different theme/font combination.
 
 ## How It Works
 
-Each markdown file in the sidebar automatically applies its own theme and font based on its filename.
-
-**Format:** \`{theme}-{font}.md\`
-
-For example:
-- \`dark-modern.md\` uses the \`dark\` theme with \`modern\` fonts
-- \`nord-classic.md\` uses the \`nord\` theme with \`classic\` fonts
+${indexExplanation}
 
 ## Quick Start
 
@@ -382,7 +439,21 @@ bun index.ts ${outputDir}
 
 ## Generated Combinations
 
-${combinations.map(({ font, theme }) => `- **${theme}-${font}.md** - ${theme} theme + ${font} fonts`).join("\n")}
+${combinations
+  .map(({ font, theme }, idx) => {
+    let filename: string;
+    if (!useFilenameFormat) {
+      filename = `preview-${idx + 1}.md`;
+    } else if (selectedFont) {
+      filename = `${theme}.md`;
+    } else if (selectedTheme) {
+      filename = `${font}.md`;
+    } else {
+      filename = `${theme}-${font}.md`;
+    }
+    return `- **${filename}** - ${theme} theme + ${font} fonts`;
+  })
+  .join("\n")}
 
 ## Available Themes
 
@@ -445,8 +516,25 @@ console.log(`📄 Generated ${combinations.length} preview files`);
 console.log(`📖 Index: ${join(outputDir, "README.md")}\n`);
 
 console.log("Preview files created:\n");
-for (const { font, theme } of combinations) {
-  console.log(`  • ${theme}-${font}.md`);
+for (let i = 0; i < combinations.length; i += 1) {
+  const combo = combinations[i];
+  if (!combo) {
+    continue;
+  }
+  const { font, theme } = combo;
+
+  let filename: string;
+  if (!useFilenameFormat) {
+    filename = `preview-${i + 1}.md`;
+  } else if (selectedFont) {
+    filename = `${theme}.md`;
+  } else if (selectedTheme) {
+    filename = `${font}.md`;
+  } else {
+    filename = `${theme}-${font}.md`;
+  }
+
+  console.log(`  • ${filename}`);
 }
 
 console.log("\n🎨 Quick Start:\n");

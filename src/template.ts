@@ -649,8 +649,8 @@ type LayoutOptions = {
   watchFile?: string;
 };
 
-// Pure function: base HTML layout
-const baseLayout = (options: LayoutOptions): string => {
+// Pure function: base HTML layout (exported for analytics template)
+export const baseLayout = (options: LayoutOptions): string => {
   const {
     content,
     title,
@@ -699,6 +699,12 @@ const baseLayout = (options: LayoutOptions): string => {
                 fill="none"/>
         </svg>
         llmd
+        <a href="/analytics" style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 8px; color: var(--fg); opacity: 0.5; text-decoration: none; transition: opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'" title="Analytics">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"></path>
+            <path d="M18 17l-4-4-4 4-4-4"></path>
+          </svg>
+        </a>
       </h1>
     </div>
     ${generateSidebar(files, currentPath)}
@@ -771,13 +777,16 @@ export const generateIndexPage = (
          </div>
        </div>`;
 
+  // Add event tracking script
+  const trackingScript = `<script>window.addEventListener('load', () => window.trackDirectoryOpen?.('${config.directory}'));</script>`;
+
   return baseLayout({
     content,
     title: "Home",
     theme: config.theme,
     fontTheme: config.fontTheme,
     files,
-    clientScript,
+    clientScript: (clientScript || "") + trackingScript,
   });
 };
 
@@ -800,6 +809,10 @@ export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
     ${html}
   </div>`;
 
+  // Add event tracking script (send absolute path)
+  const absolutePath = `${config.directory}/${currentPath}`;
+  const trackingScript = `<script>window.addEventListener('load', () => window.trackFileView?.('${absolutePath}'));</script>`;
+
   return baseLayout({
     content,
     title: fileName,
@@ -807,7 +820,7 @@ export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
     fontTheme: config.fontTheme,
     files,
     currentPath,
-    clientScript,
+    clientScript: (clientScript || "") + trackingScript,
     watchEnabled: config.watch,
     watchFile: currentPath,
   });

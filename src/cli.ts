@@ -12,9 +12,13 @@ llmd - Serve Markdown files as beautiful HTML
 
 Usage:
   llmd [path] [options]
+  llmd analytics [path] [options]
 
 Arguments:
   path                     Directory or file to serve (default: current directory)
+
+Commands:
+  analytics                Open directly to the analytics page
 
 Options:
   --port <number>                   Port to bind to (default: random)
@@ -34,6 +38,8 @@ Examples:
   llmd ./docs                       # Serve docs directory
   llmd README.md                    # Serve current dir, open to README.md
   llmd ./docs/API.md                # Serve docs dir, open to API.md
+  llmd analytics                    # Open to analytics page
+  llmd analytics ~/my-project       # Open analytics for specific project
   llmd --fonts modern               # Use modern font combo (Tajawal + Fira Code)
   llmd --theme nord                 # Use Nord color theme
   llmd --theme dracula --watch      # Dracula theme with live reload
@@ -54,6 +60,8 @@ export const parseArgs = (args: string[]): ParsedArgs => {
       flags.help = true;
     } else if (arg === "--version") {
       flags.version = true;
+    } else if (arg === "analytics") {
+      flags.analytics = true;
     } else if (arg === "--port") {
       flags.port = Number.parseInt(args[++i] ?? "0", 10);
     } else if (arg === "--theme") {
@@ -101,7 +109,6 @@ export const createConfig = (parsed: ParsedArgs): Config => {
     directory,
     initialFile,
     port: flags.port ?? 0,
-    host: "localhost",
     theme: flags.theme ?? "dark",
     fontTheme:
       (flags.fontTheme as
@@ -116,6 +123,7 @@ export const createConfig = (parsed: ParsedArgs): Config => {
         | "editorial") ?? "sans",
     open: flags.open ?? true,
     watch: flags.watch ?? false,
+    openToAnalytics: flags.analytics ?? false,
   };
 };
 
