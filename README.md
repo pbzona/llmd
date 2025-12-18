@@ -1,22 +1,8 @@
 # llmd
 
-**Serve Markdown as beautiful HTML. Instantly.**
+**Serve Markdown as HTML, instantly.**
 
-A minimal CLI tool for viewing Markdown files in your browser with syntax highlighting, live reload, and a clean interface. Built for developers reviewing LLM-generated documentation.
-
-## Installation
-
-```bash
-npm install -g llmd
-```
-
-Or run directly without installing:
-
-```bash
-npx llmd
-```
-
-Requires Node.js 22 or later.
+A minimal CLI tool for viewing Markdown files in your browser with syntax highlighting, live reload, and optional event analytics. Built for developers reviewing LLM-generated documentation.
 
 ## Quick Start
 
@@ -38,9 +24,6 @@ That's it! The docs will open in your browser. Click through the sidebar to expl
 - **Syntax highlighting** - Powered by Shiki
 - **Live reload** - Watch mode reloads on file changes
 - **Copy buttons** - One-click code copying
-- **Dark/light themes** - With 9 font combinations
-- **Fast** - Built with Bun, instant startup
-- **Sidebar navigation** - Browse files with directory structure
 - **Table of contents** - Auto-generated from headings
 - **Usage Analytics** - Track which docs you view most (local-only, opt-in)
 
