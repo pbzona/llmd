@@ -5,7 +5,12 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
-import { getClientScript, getClientScriptTag, getClientScriptTagExternal, hasSourceMaps } from "./client-assets";
+import {
+  getClientScript,
+  getClientScriptTag,
+  getClientScriptTagExternal,
+  hasSourceMaps,
+} from "./client-assets";
 import { initEventService } from "./events";
 import { processMarkdown } from "./markdown";
 import { handleApiRoute } from "./routes/api";
