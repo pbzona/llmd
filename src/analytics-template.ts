@@ -193,7 +193,6 @@ export const generateAnalyticsPage = (options: AnalyticsPageOptions): string => 
     content,
     title: "Analytics",
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     clientScript,
   });

@@ -1,13 +1,13 @@
 // HTML template generation
 
-import { generateFontImport, getFontFamilies } from "./font-themes";
-import { getThemeColors } from "./theme-config";
+import { getTheme } from "./theme-config";
 import type { Config, MarkdownFile } from "./types";
 
 // Pure function: generate embedded CSS
-const getStyles = (themeName: string, fontTheme: string): string => {
-  const colors = getThemeColors(themeName);
-  const fontFamilies = getFontFamilies(fontTheme);
+const getStyles = (themeName: string): string => {
+  const theme = getTheme(themeName);
+  const colors = theme.colors;
+  const fontFamilies = theme.fonts;
   // Determine if theme is dark based on background brightness
   const isDark = Number.parseInt(colors.bg.replace("#", ""), 16) < 0x80_80_80;
 
@@ -760,12 +760,25 @@ const generateSidebar = (files: MarkdownFile[], currentPath?: string): string =>
   </nav>`;
 };
 
+// Pure function: generate font import link tag for Google Fonts
+const generateFontImport = (themeName: string): string => {
+  const theme = getTheme(themeName);
+  const googleFontsUrl = theme.fonts.googleFontsUrl;
+
+  if (!googleFontsUrl) {
+    return ""; // System fonts only
+  }
+
+  return `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="${googleFontsUrl}" rel="stylesheet">`;
+};
+
 // Options for base layout
 type LayoutOptions = {
   content: string;
   title: string;
-  theme: string; // Theme name (built-in or custom)
-  fontTheme: string;
+  theme: string; // Theme name (built-in or custom, includes colors + fonts)
   files: MarkdownFile[];
   currentPath?: string;
   clientScript?: string;
@@ -775,24 +788,15 @@ type LayoutOptions = {
 
 // Pure function: base HTML layout (exported for analytics template)
 export const baseLayout = (options: LayoutOptions): string => {
-  const {
-    content,
-    title,
-    theme,
-    fontTheme,
-    files,
-    currentPath,
-    clientScript,
-    watchEnabled,
-    watchFile,
-  } = options;
+  const { content, title, theme, files, currentPath, clientScript, watchEnabled, watchFile } =
+    options;
 
   const watchScriptTag =
     watchEnabled && watchFile
       ? `<script>window.addEventListener('load', () => window.connectFileWatcher?.('${watchFile}'));</script>`
       : "";
 
-  const fontImport = generateFontImport(fontTheme);
+  const fontImport = generateFontImport(theme);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -802,7 +806,7 @@ export const baseLayout = (options: LayoutOptions): string => {
   <title>${title} - llmd</title>
   <link rel="icon" type="image/svg+xml" href="/_favicon">
   ${fontImport}
-  <style>${getStyles(theme, fontTheme)}</style>
+  <style>${getStyles(theme)}</style>
 </head>
 <body>
   <aside class="sidebar">
@@ -902,7 +906,6 @@ export const generateIndexPage = (
     content,
     title: "Home",
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     clientScript: (clientScript || "") + trackingScript,
   });
@@ -935,7 +938,6 @@ export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
     content,
     title: fileName,
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     currentPath,
     clientScript: (clientScript || "") + trackingScript,
@@ -965,7 +967,6 @@ export const generateErrorPage = (options: ErrorPageOptions): string => {
     content,
     title: `Error ${errorCode}`,
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     clientScript,
   });

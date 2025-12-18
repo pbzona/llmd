@@ -216,7 +216,6 @@ export const generateHighlightsPage = (options: HighlightsPageOptions): string =
     content,
     title: "Highlights",
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     clientScript: (clientScript || "") + highlightsScript,
   });
