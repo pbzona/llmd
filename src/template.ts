@@ -172,7 +172,6 @@ const getStyles = (themeName: string): string => {
     
     .sidebar-nav .dir-label span,
     .sidebar-nav a span {
-      flex: 1;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
