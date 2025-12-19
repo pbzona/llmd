@@ -541,7 +541,7 @@ const getStyles = (themeName: string): string => {
     
     /* Highlights */
     .llmd-highlight {
-      background: color-mix(in srgb, var(--highlight-bg) 50%, transparent);
+      background: color-mix(in srgb, var(--highlight-bg) 100%, transparent);
       border-bottom: 2px solid color-mix(in srgb, var(--highlight-bg) 60%, ${isDark ? "#000" : "#fff"});
       cursor: pointer;
       transition: background 0.2s;

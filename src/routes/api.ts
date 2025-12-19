@@ -131,6 +131,36 @@ const handleAnalyticsRoute = async (ctx: RouteContext): Promise<boolean> => {
   return false;
 };
 
+// Handle markdown API routes
+const handleMarkdownRoute = async (ctx: RouteContext): Promise<boolean> => {
+  if (!ctx.pathname.startsWith("/api/markdown")) {
+    return false;
+  }
+
+  // Get raw markdown content
+  if (ctx.pathname === "/api/markdown/raw" && ctx.req.method === "GET") {
+    const markdownPath = ctx.url.searchParams.get("path");
+    if (!markdownPath) {
+      sendResponse(ctx.res, 400, { "Content-Type": "text/plain" }, "Missing path parameter");
+      return true;
+    }
+
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const absolutePath = markdownPath.startsWith("/")
+        ? markdownPath
+        : join(ctx.config.directory, markdownPath);
+      const content = await readFile(absolutePath, "utf-8");
+      sendJson(ctx.res, 200, { content });
+    } catch {
+      sendResponse(ctx.res, 404, { "Content-Type": "text/plain" }, "File not found");
+    }
+    return true;
+  }
+
+  return false;
+};
+
 // Handle highlights API routes
 const handleHighlightsRoute = async (ctx: RouteContext): Promise<boolean> => {
   if (!ctx.pathname.startsWith("/api/highlights")) {
@@ -219,6 +249,9 @@ export const handleApiRoute = async (
     return true;
   }
   if (await handleAnalyticsRoute(ctx)) {
+    return true;
+  }
+  if (await handleMarkdownRoute(ctx)) {
     return true;
   }
   if (await handleHighlightsRoute(ctx)) {
