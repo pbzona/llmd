@@ -654,14 +654,13 @@ export const getAnalyticsStatus = (): {
 };
 
 // Side effect: save theme preferences to database
-export const saveThemePreferences = (theme: string, fontTheme: string): void => {
+export const saveThemePreferences = (theme: string): void => {
   try {
     const dbPath = resolveDatabasePath();
     const db = createDatabase(dbPath);
     initializeDatabase(db);
 
     setConfigValue(db, "theme", theme);
-    setConfigValue(db, "font_theme", fontTheme);
 
     db.close();
   } catch (err) {
@@ -671,20 +670,18 @@ export const saveThemePreferences = (theme: string, fontTheme: string): void => 
 };
 
 // Side effect: load theme preferences from database
-export const loadThemePreferences = (): { theme?: string; fontTheme?: string } => {
+export const loadThemePreferences = (): { theme?: string } => {
   try {
     const dbPath = resolveDatabasePath();
     const db = createDatabase(dbPath);
     initializeDatabase(db);
 
     const theme = getConfigValue(db, "theme");
-    const fontTheme = getConfigValue(db, "font_theme");
 
     db.close();
 
     return {
       theme: theme || undefined,
-      fontTheme: fontTheme || undefined,
     };
   } catch {
     // Database doesn't exist or can't be read - return empty

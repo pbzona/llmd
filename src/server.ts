@@ -117,7 +117,6 @@ const handleMarkdownView = async (
       ? {
           ...config,
           theme: previewConfig.theme ?? config.theme,
-          fontTheme: previewConfig.font ?? config.fontTheme,
         }
       : config;
 

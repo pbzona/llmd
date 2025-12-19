@@ -379,7 +379,7 @@ const main = async () => {
     const config = result.config;
 
     // Save theme preferences for next time
-    saveThemePreferences(config.theme, config.fontTheme);
+    saveThemePreferences(config.theme);
 
     // Scan for markdown files
     console.log(`→ Scanning ${config.directory}...`);
