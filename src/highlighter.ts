@@ -13,7 +13,6 @@ import json from "shiki/langs/json.mjs";
 import jsx from "shiki/langs/jsx.mjs";
 import markdown from "shiki/langs/markdown.mjs";
 import python from "shiki/langs/python.mjs";
-import ruby from "shiki/langs/ruby.mjs";
 import rust from "shiki/langs/rust.mjs";
 import shell from "shiki/langs/shellscript.mjs";
 import sql from "shiki/langs/sql.mjs";
@@ -64,7 +63,6 @@ const languageModules = {
   python,
   rust,
   go,
-  ruby,
   bash,
   shell,
   sql,
