@@ -1,6 +1,6 @@
 {
   "name": "llmd",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "Local markdown server for LLM-generated docs",
   "author": "Phil Zona <phil.b.zona@gmail.com>",
   "license": "MIT",
@@ -23,7 +23,8 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "bun": ">=1.2.2"
   },
   "publishConfig": {
     "access": "public"
@@ -33,7 +34,6 @@
     "test": "bun test",
     "build": "bash scripts/build.sh",
     "prepublishOnly": "bun test && bun run build",
-    "preview": "bun scripts/generate-preview.ts",
     "check-contrast": "bun scripts/check-contrast.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",

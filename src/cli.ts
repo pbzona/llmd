@@ -4,64 +4,120 @@ import { existsSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { loadThemePreferences } from "./events";
-import { fontExists, getAvailableFonts } from "./font-themes";
 import { getAvailableThemes, themeExists } from "./theme-config";
 import type { CliResult, Config, ParsedArgs } from "./types";
 
 const VERSION = pkg.version;
+
+// Subcommand help texts
+const ANALYTICS_HELP = `
+llmd analytics - Manage analytics tracking
+
+Usage:
+  llmd analytics [subcommand] [path] [options]
+
+Subcommands:
+  view [path]              Open to analytics page (default)
+  enable                   Enable analytics tracking
+  disable                  Disable analytics tracking
+
+Options:
+  -h, --help               Show this help
+`;
+
+const DB_HELP = `
+llmd db - Manage database
+
+Usage:
+  llmd db [subcommand] [options]
+
+Subcommands:
+  check                    Show database size and statistics
+  cleanup                  Delete events older than N days
+  clear                    Clear all events and resources from database
+
+Options:
+  --days <number>          Number of days for db cleanup (default: 30)
+  -h, --help               Show this help
+`;
+
+const ARCHIVE_HELP = `
+llmd archive - Manage highlight archive
+
+Usage:
+  llmd archive [subcommand]
+
+Subcommands:
+  list                     List all backed up files
+  show <path>              Show details for a specific backup
+  clear                    Delete all backed up files
+
+The archive stores backup copies of files when highlights are created.
+Archive location: ~/.cache/llmd/file-backups
+
+Options:
+  -h, --help               Show this help
+`;
+
+const HIGHLIGHTS_HELP = `
+llmd highlights - Manage highlights feature
+
+Usage:
+  llmd highlights [subcommand]
+
+Subcommands:
+  enable                   Enable highlights feature (default)
+  disable                  Disable highlights feature
+
+Options:
+  -h, --help               Show this help
+`;
+
+const EXPORT_HELP = `
+llmd export - Export highlights to markdown
+
+Usage:
+  llmd export [path]
+
+Arguments:
+  path                     Directory to export highlights from (default: current directory)
+
+Exports all highlights from a directory to a markdown file in ~/.llmd/
+
+Options:
+  -h, --help               Show this help
+`;
+
 const HELP_TEXT = `
 llmd - Serve Markdown files as beautiful HTML
 
 Usage:
   llmd [path] [options]
-  llmd docs
-  llmd analytics [subcommand] [path] [options]
-  llmd db [subcommand] [options]
+  llmd <command>
 
 Arguments:
   path                     Directory or file to serve (default: current directory)
 
 Commands:
-  docs                     View llmd documentation (clones repo to ~/.local/share/llmd-docs)
-  analytics [subcommand]   Manage analytics
-    view [path]            Open to analytics page (default subcommand)
-    enable                 Enable analytics tracking
-    disable                Disable analytics tracking
-  db [subcommand]          Manage analytics database
-    check                  Show database size and statistics
-    cleanup [--days N]     Delete events older than N days (default: 30)
-    clear                  Clear all events and resources from database
+  docs                     View llmd documentation
+  analytics                Manage analytics tracking
+  highlights               Manage highlights feature
+  db                       Manage database
+  archive                  Manage highlight archive
+  export                   Export highlights to markdown
+
+  Use 'llmd <command> --help' for more information about a command.
 
 Options:
-  --port <number>                   Port to bind to (default: random)
-  --theme <name>                    Color theme (default: dark)
-                                    Built-in: dark, light, nord, dracula, solarized, monokai
-                                    Custom themes: ~/.config/llmd/themes.json
-  --fonts <name>                    Font combination (default: sans)
-                                    Built-in: serif, sans, mono, classic, future, modern, artsy, literary, editorial
-                                    Custom fonts: ~/.config/llmd/fonts.json
-  --open / --no-open                Auto-open browser (default: --open)
-  --watch / --no-watch              Reload on file changes (default: --no-watch)
-  --days <number>                   Number of days for db cleanup (default: 30)
-  -h, --help                        Show this help
-  --version                         Show version
+  --port <number>          Port to bind to (default: random)
+  --theme <name>           Color theme (default: dark)
+  --fonts <name>           Font combination (default: sans)
+  --open / --no-open       Auto-open browser (default: --open)
+  --watch / --no-watch     Reload on file changes (default: --no-watch)
+  -h, --help               Show this help
+  --version                Show version
 
-Examples:
-  llmd                              # Serve current directory
-  llmd docs                         # View llmd documentation
-  llmd ./docs                       # Serve docs directory
-  llmd README.md                    # Serve current dir, open to README.md
-  llmd ./docs/API.md                # Serve docs dir, open to API.md
-  llmd analytics                    # Open to analytics page
-  llmd analytics view ~/my-project  # Open analytics for specific project
-  llmd analytics enable             # Enable analytics tracking
-  llmd analytics disable            # Disable analytics tracking
-  llmd db check                     # Show database statistics
-  llmd db cleanup --days 30         # Delete events older than 30 days
-  llmd db clear                     # Clear all analytics data
-  llmd --fonts modern               # Use modern font combo (Inter + JetBrains Mono)
-  llmd --theme nord                 # Use Nord color theme
-  llmd --theme dracula --watch      # Dracula theme with live reload
+For more information, visit: https://github.com/pbzona/llmd
 `;
 
 // Helper: parse analytics command and subcommand
@@ -86,6 +142,37 @@ const parseDbCommand = (
     return { subcommand: nextArg, nextIndex: index + 1 };
   }
   return { subcommand: "check", nextIndex: index };
+};
+
+// Helper: parse highlights command and subcommand
+const parseHighlightsCommand = (
+  args: string[],
+  index: number
+): { subcommand: "enable" | "disable"; nextIndex: number } => {
+  const nextArg = args[index + 1];
+  if (nextArg === "enable" || nextArg === "disable") {
+    return { subcommand: nextArg, nextIndex: index + 1 };
+  }
+  return { subcommand: "enable", nextIndex: index };
+};
+
+// Helper: parse archive command and subcommand
+const parseArchiveCommand = (
+  args: string[],
+  index: number
+): { subcommand: "list" | "show" | "clear"; nextIndex: number; path?: string } => {
+  const nextArg = args[index + 1];
+
+  if (nextArg === "list" || nextArg === "clear") {
+    return { subcommand: nextArg, nextIndex: index + 1 };
+  }
+
+  if (nextArg === "show") {
+    const path = args[index + 2];
+    return { subcommand: "show", nextIndex: index + 2, path };
+  }
+
+  return { subcommand: "list", nextIndex: index };
 };
 
 // Helper: parse boolean flags
@@ -136,14 +223,16 @@ const parseValueFlag = (
     flags.theme = args[index + 1];
     return index + 1;
   }
-  if (arg === "--fonts") {
-    flags.fontTheme = args[index + 1];
-    return index + 1;
-  }
   if (arg === "analytics") {
     flags.analytics = true;
     const { subcommand, nextIndex } = parseAnalyticsCommand(args, index);
     flags.analyticsSubcommand = subcommand;
+    return nextIndex;
+  }
+  if (arg === "highlights") {
+    flags.highlights = true;
+    const { subcommand, nextIndex } = parseHighlightsCommand(args, index);
+    flags.highlightsSubcommand = subcommand;
     return nextIndex;
   }
   if (arg === "db") {
@@ -151,6 +240,23 @@ const parseValueFlag = (
     const { subcommand, nextIndex } = parseDbCommand(args, index);
     flags.dbSubcommand = subcommand;
     return nextIndex;
+  }
+  if (arg === "archive") {
+    flags.archive = true;
+    const { subcommand, nextIndex, path: archivePath } = parseArchiveCommand(args, index);
+    flags.archiveSubcommand = subcommand;
+    flags.archivePath = archivePath;
+    return nextIndex;
+  }
+  if (arg === "export") {
+    flags.export = true;
+    // Check if next arg is a path (doesn't start with --)
+    const nextArg = args[index + 1];
+    if (nextArg && !nextArg.startsWith("--")) {
+      flags.exportPath = nextArg;
+      return index + 1;
+    }
+    return index;
   }
   if (arg === "--days") {
     const daysValue = Number.parseInt(args[index + 1] ?? "30", 10);
@@ -221,7 +327,6 @@ export const createConfig = (parsed: ParsedArgs): Config => {
     initialFile,
     port: flags.port ?? 0,
     theme: flags.theme ?? savedPreferences.theme ?? "dark",
-    fontTheme: flags.fontTheme ?? savedPreferences.fontTheme ?? "sans",
     open: flags.open ?? true,
     watch: flags.watch ?? false,
     openToAnalytics: flags.analytics ?? false,
@@ -239,13 +344,6 @@ export const validateConfig = (config: Config): void => {
     throw new Error(`Theme "${config.theme}" not found. Available themes: ${available.join(", ")}`);
   }
 
-  if (!fontExists(config.fontTheme)) {
-    const available = getAvailableFonts();
-    throw new Error(
-      `Font "${config.fontTheme}" not found. Available fonts: ${available.join(", ")}`
-    );
-  }
-
   if (config.port < 0 || config.port > 65_535) {
     throw new Error(`Invalid port: ${config.port}. Must be 0-65535`);
   }
@@ -260,51 +358,95 @@ export const printVersion = (): void => {
   console.log(`llmd v${VERSION}`);
 };
 
+// Helper: handle analytics command results
+const handleAnalyticsCommand = (subcommand: "view" | "enable" | "disable"): CliResult | null => {
+  if (subcommand === "enable") {
+    return { type: "analytics-enable" };
+  }
+  if (subcommand === "disable") {
+    return { type: "analytics-disable" };
+  }
+  return null; // "view" continues to normal flow
+};
+
+// Helper: handle db command results
+const handleDbCommand = (subcommand: "check" | "cleanup" | "clear", days?: number): CliResult => {
+  if (subcommand === "check") {
+    return { type: "db-check" };
+  }
+  if (subcommand === "cleanup") {
+    return { type: "db-cleanup", days: days ?? 30 };
+  }
+  return { type: "db-clear" };
+};
+
+// Helper: handle highlights command results
+const handleHighlightsCommand = (subcommand: "enable" | "disable"): CliResult => {
+  if (subcommand === "enable") {
+    return { type: "highlights-enable" };
+  }
+  return { type: "highlights-disable" };
+};
+
+// Helper: handle archive command results
+const handleArchiveCommand = (subcommand: "list" | "show" | "clear", path?: string): CliResult => {
+  if (subcommand === "list") {
+    return { type: "archive-list" };
+  }
+  if (subcommand === "show") {
+    if (!path) {
+      throw new Error("archive show requires a path argument");
+    }
+    return { type: "archive-show", path };
+  }
+  return { type: "archive-clear" };
+};
+
 // Main CLI handler (coordinates pure functions + side effects)
 export const parseCli = (args: string[]): CliResult => {
   const parsed = parseArgs(args);
 
+  // Early exits for help/version
   if (parsed.flags.help) {
     printHelp();
     return { type: "exit" };
   }
-
   if (parsed.flags.version) {
     printVersion();
     return { type: "exit" };
   }
 
+  // Command handling
   if (parsed.flags.docs) {
     return { type: "docs" };
   }
 
-  // Handle analytics subcommands
   if (parsed.flags.analytics && parsed.flags.analyticsSubcommand) {
-    if (parsed.flags.analyticsSubcommand === "enable") {
-      return { type: "analytics-enable" };
+    const result = handleAnalyticsCommand(parsed.flags.analyticsSubcommand);
+    if (result) {
+      return result;
     }
-    if (parsed.flags.analyticsSubcommand === "disable") {
-      return { type: "analytics-disable" };
-    }
-    // "view" continues to normal flow
   }
 
-  // Handle db subcommands
+  if (parsed.flags.highlights && parsed.flags.highlightsSubcommand) {
+    return handleHighlightsCommand(parsed.flags.highlightsSubcommand);
+  }
+
   if (parsed.flags.db && parsed.flags.dbSubcommand) {
-    if (parsed.flags.dbSubcommand === "check") {
-      return { type: "db-check" };
-    }
-    if (parsed.flags.dbSubcommand === "cleanup") {
-      const days = parsed.flags.days ?? 30;
-      return { type: "db-cleanup", days };
-    }
-    if (parsed.flags.dbSubcommand === "clear") {
-      return { type: "db-clear" };
-    }
+    return handleDbCommand(parsed.flags.dbSubcommand, parsed.flags.days);
   }
 
+  if (parsed.flags.archive && parsed.flags.archiveSubcommand) {
+    return handleArchiveCommand(parsed.flags.archiveSubcommand, parsed.flags.archivePath);
+  }
+
+  if (parsed.flags.export) {
+    const path = parsed.flags.exportPath || process.cwd();
+    return { type: "export", path };
+  }
+
+  // Default: create server config
   const config = createConfig(parsed);
   validateConfig(config);
-
   return { type: "config", config };
 };

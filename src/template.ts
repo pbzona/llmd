@@ -1,13 +1,13 @@
 // HTML template generation
 
-import { generateFontImport, getFontFamilies } from "./font-themes";
-import { getThemeColors } from "./theme-config";
+import { getTheme } from "./theme-config";
 import type { Config, MarkdownFile } from "./types";
 
 // Pure function: generate embedded CSS
-const getStyles = (themeName: string, fontTheme: string): string => {
-  const colors = getThemeColors(themeName);
-  const fontFamilies = getFontFamilies(fontTheme);
+const getStyles = (themeName: string): string => {
+  const theme = getTheme(themeName);
+  const colors = theme.colors;
+  const fontFamilies = theme.fonts;
   // Determine if theme is dark based on background brightness
   const isDark = Number.parseInt(colors.bg.replace("#", ""), 16) < 0x80_80_80;
 
@@ -23,6 +23,8 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       --accent: ${colors.accent};
       --code-bg: ${colors.codeBg};
       --sidebar-bg: ${colors.sidebarBg};
+      --highlight-bg: ${colors.highlightBg};
+      --highlight-stale-bg: ${colors.highlightStaleBg};
     }
     
     body {
@@ -33,6 +35,7 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       background: var(--bg);
       display: flex;
       min-height: 100vh;
+      position: relative;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
@@ -169,6 +172,7 @@ const getStyles = (themeName: string, fontTheme: string): string => {
     
     .sidebar-nav .dir-label span,
     .sidebar-nav a span {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -178,7 +182,6 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       width: 18px;
       height: 18px;
       flex-shrink: 0;
-      opacity: 0.9;
       color: ${colors.folderIcon};
       stroke: currentColor;
     }
@@ -201,7 +204,6 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       width: 18px;
       height: 18px;
       flex-shrink: 0;
-      opacity: 0.8;
       color: ${colors.fileIcon};
       stroke: currentColor;
     }
@@ -226,10 +228,6 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       font-weight: 600;
     }
     
-    .sidebar-nav a.active svg {
-      opacity: 1;
-    }
-    
     .sidebar-nav .depth-0 { padding-left: 6px; }
     .sidebar-nav .depth-1 { padding-left: 18px; }
     .sidebar-nav .depth-2 { padding-left: 30px; }
@@ -237,6 +235,26 @@ const getStyles = (themeName: string, fontTheme: string): string => {
     
     .sidebar-nav > ul > li > a::before {
       display: none;
+    }
+    
+    /* Admin Section */
+    .admin-header:hover {
+      background: ${isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)"};
+    }
+    
+    .admin-section.collapsed .admin-list {
+      max-height: 0;
+      overflow: hidden;
+      margin: 0;
+      opacity: 0;
+    }
+    
+    .admin-section.collapsed .admin-toggle {
+      transform: rotate(-90deg);
+    }
+    
+    .admin-list a:hover {
+      background: ${isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)"};
     }
     
     .main {
@@ -521,6 +539,67 @@ const getStyles = (themeName: string, fontTheme: string): string => {
       color: ${isDark ? "#c0c0c0" : "#666"};
     }
     
+    /* Highlights */
+    .llmd-highlight {
+      background: color-mix(in srgb, var(--highlight-bg) 100%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--highlight-bg) 60%, ${isDark ? "#000" : "#fff"});
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .llmd-highlight:hover {
+      background: color-mix(in srgb, var(--highlight-bg) 35%, transparent);
+    }
+    
+    .llmd-highlight-stale {
+      background: color-mix(in srgb, var(--highlight-stale-bg) 20%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--highlight-stale-bg) 60%, ${isDark ? "#000" : "#fff"});
+      border-style: dashed;
+    }
+    
+    .highlight-popup {
+      position: absolute;
+      z-index: 1000;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      padding: 12px;
+      display: none;
+      min-width: 300px;
+    }
+    
+    .highlight-create-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+    }
+    
+    .highlight-create-btn:hover {
+      opacity: 0.9;
+    }
+    
+    .highlight-create-btn:active {
+      transform: translateY(1px);
+    }
+    
+    /* Highlight flash animation for scroll-to */
+    @keyframes highlight-flash {
+      0% { background: var(--accent); }
+      100% { background: ${isDark ? "rgba(255, 220, 0, 0.25)" : "rgba(255, 235, 59, 0.35)"}; }
+    }
+    
+    .highlight-flash {
+      animation: highlight-flash 1s ease-out;
+    }
+    
     @media (max-width: 768px) {
       body { flex-direction: column; }
       .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
@@ -601,6 +680,10 @@ const FOLDER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="
 
 const FILE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg>`;
 
+const ANALYTICS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17l-4-4-4 4-4-4"/></svg>`;
+
+const HIGHLIGHTS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`;
+
 // Pure function: render tree nodes recursively
 const renderTreeNodes = (nodes: TreeNode[], currentPath?: string): string =>
   nodes
@@ -614,34 +697,83 @@ const renderTreeNodes = (nodes: TreeNode[], currentPath?: string): string =>
           return "";
         }
         return `<li class="dir-item">
-          <div class="dir-label depth-${node.depth}">${FOLDER_ICON}<span>${node.name}/</span></div>
+          <div class="nav-link-dir dir-label depth-${node.depth}">${FOLDER_ICON}<span>${node.name}/</span></div>
           <ul>${children}</ul>
         </li>`;
       }
       const isActive = currentPath === node.path;
       const activeClass = isActive ? "active" : "";
-      return `<li><a href="/view/${node.path}" class="depth-${node.depth} ${activeClass}">${FILE_ICON}<span>${node.name}</span></a></li>`;
+      return `<li><a href="/view/${node.path}" class="nav-link-file depth-${node.depth} ${activeClass}" data-file-path="${node.path}">${FILE_ICON}<span>${node.name}</span></a></li>`;
     })
     .join("\n");
 
+// Pure function: generate admin section (collapsible)
+const generateAdminSection = (): string => `
+  <div class="admin-section" style="padding: 12px 12px 8px 12px; border-bottom: 1px solid var(--border);">
+    <div class="admin-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: background 0.15s; user-select: none;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; opacity: 0.5;">
+        Admin
+      </div>
+      <svg class="admin-toggle" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; transition: transform 0.2s;">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </div>
+    <ul class="admin-list" style="list-style: none; padding: 0; margin: 8px 0 0 0; transition: all 0.2s;">
+      <li>
+        <a href="/analytics" class="depth-0" style="display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 6px; color: var(--fg); text-decoration: none; border-radius: 6px; font-size: 0.9375rem; transition: background 0.15s;">
+          ${ANALYTICS_ICON}
+          <span>Analytics</span>
+        </a>
+      </li>
+      <li>
+        <a href="/highlights" class="depth-0" style="display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 6px; color: var(--fg); text-decoration: none; border-radius: 6px; font-size: 0.9375rem; transition: background 0.15s;">
+          ${HIGHLIGHTS_ICON}
+          <span>Highlights</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+`;
+
 // Pure function: generate file tree sidebar HTML
 const generateSidebar = (files: MarkdownFile[], currentPath?: string): string => {
+  const adminSection = generateAdminSection();
+
   if (files.length === 0) {
-    return '<div class="sidebar-nav"><p style="padding: 12px; color: #b3b3b3;">No markdown files found</p></div>';
+    return `<div class="sidebar-nav">
+      ${adminSection}
+      <p style="padding: 12px; color: #b3b3b3;">No markdown files found</p>
+    </div>`;
   }
 
   const tree = buildTree(files);
   const items = renderTreeNodes(tree, currentPath);
 
-  return `<nav class="sidebar-nav"><ul>${items}</ul></nav>`;
+  return `<nav class="sidebar-nav">
+    ${adminSection}
+    <ul>${items}</ul>
+  </nav>`;
+};
+
+// Pure function: generate font import link tag for Google Fonts
+const generateFontImport = (themeName: string): string => {
+  const theme = getTheme(themeName);
+  const googleFontsUrl = theme.fonts.googleFontsUrl;
+
+  if (!googleFontsUrl) {
+    return ""; // System fonts only
+  }
+
+  return `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="${googleFontsUrl}" rel="stylesheet">`;
 };
 
 // Options for base layout
 type LayoutOptions = {
   content: string;
   title: string;
-  theme: string; // Theme name (built-in or custom)
-  fontTheme: string;
+  theme: string; // Theme name (built-in or custom, includes colors + fonts)
   files: MarkdownFile[];
   currentPath?: string;
   clientScript?: string;
@@ -651,24 +783,15 @@ type LayoutOptions = {
 
 // Pure function: base HTML layout (exported for analytics template)
 export const baseLayout = (options: LayoutOptions): string => {
-  const {
-    content,
-    title,
-    theme,
-    fontTheme,
-    files,
-    currentPath,
-    clientScript,
-    watchEnabled,
-    watchFile,
-  } = options;
+  const { content, title, theme, files, currentPath, clientScript, watchEnabled, watchFile } =
+    options;
 
   const watchScriptTag =
     watchEnabled && watchFile
       ? `<script>window.addEventListener('load', () => window.connectFileWatcher?.('${watchFile}'));</script>`
       : "";
 
-  const fontImport = generateFontImport(fontTheme);
+  const fontImport = generateFontImport(theme);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -678,7 +801,7 @@ export const baseLayout = (options: LayoutOptions): string => {
   <title>${title} - llmd</title>
   <link rel="icon" type="image/svg+xml" href="/_favicon">
   ${fontImport}
-  <style>${getStyles(theme, fontTheme)}</style>
+  <style>${getStyles(theme)}</style>
 </head>
 <body>
   <aside class="sidebar">
@@ -699,12 +822,6 @@ export const baseLayout = (options: LayoutOptions): string => {
                 fill="none"/>
         </svg>
         llmd
-        <a href="/analytics" style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 8px; color: var(--fg); opacity: 0.5; text-decoration: none; transition: opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'" title="Analytics">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 3v18h18"></path>
-            <path d="M18 17l-4-4-4 4-4-4"></path>
-          </svg>
-        </a>
       </h1>
     </div>
     ${generateSidebar(files, currentPath)}
@@ -784,7 +901,6 @@ export const generateIndexPage = (
     content,
     title: "Home",
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     clientScript: (clientScript || "") + trackingScript,
   });
@@ -817,7 +933,6 @@ export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
     content,
     title: fileName,
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     currentPath,
     clientScript: (clientScript || "") + trackingScript,
@@ -847,7 +962,6 @@ export const generateErrorPage = (options: ErrorPageOptions): string => {
     content,
     title: `Error ${errorCode}`,
     theme: config.theme,
-    fontTheme: config.fontTheme,
     files,
     clientScript,
   });

@@ -1,0 +1,56 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Server",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--inspect-wait", "index.ts"],
+      "args": ["test-fixtures/docs"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "preLaunchTask": "Build Client (Dev)"
+    },
+    {
+      "name": "Debug Client (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3333",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "pathMapping": {
+        "/_client.js": "${workspaceFolder}/dist/client.js"
+      }
+    },
+    {
+      "name": "Debug Server + Client",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["index.ts"],
+      "args": ["test-fixtures/docs"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "preLaunchTask": "Build Client (Dev)",
+      "serverReadyAction": {
+        "pattern": "Server running at (https?://[^\\s]+)",
+        "action": "debugWithChrome",
+        "webRoot": "${workspaceFolder}",
+        "uriFormat": "%s"
+      }
+    },
+    {
+      "name": "Debug Current Test",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--inspect-wait", "test", "${file}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

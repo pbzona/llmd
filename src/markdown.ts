@@ -76,7 +76,7 @@ export const generateTOC = (
     .map((h) => `<li class="toc-level-${h.level}"><a href="#${h.id}">${h.text}</a></li>`)
     .join("\n");
 
-  return `<nav class="toc"><h3>Contents</h3><ul>${items}</ul></nav>`;
+  return `<nav class="toc collapsed"><h3>Contents</h3><ul>${items}</ul></nav>`;
 };
 
 // Pure function: add IDs to headings in HTML

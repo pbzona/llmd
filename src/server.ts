@@ -5,9 +5,15 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
-import { getClientScriptTag } from "./client-assets";
+import {
+  getClientScript,
+  getClientScriptTag,
+  getClientScriptTagExternal,
+  hasSourceMaps,
+} from "./client-assets";
 import { initEventService } from "./events";
 import { processMarkdown } from "./markdown";
+import { handleApiRoute } from "./routes/api";
 import { generateErrorPage, generateIndexPage, generateMarkdownPage } from "./template";
 import type { Config, EventService, MarkdownFile } from "./types";
 import { unwatchFile, watchFile } from "./watcher";
@@ -55,39 +61,16 @@ const sendResponse = (
 // Regex for matching .md extension (top-level to avoid re-creation)
 const MD_EXTENSION = /\.md$/;
 
-// Helper: extract theme/font from filename (for preview mode)
-// Format: theme-font.md (e.g., "dark-modern.md", "nord-classic.md")
-//
-// IMPORTANT: This extraction ALWAYS takes precedence over CLI flags when a match is found.
-// This enables the preview generation workflow where each file demonstrates a different theme/font:
-// - "nord-modern.md" → forces nord theme + modern font
-// - "dark.md" → only extracts theme (font falls back to CLI or default)
-// - "modern.md" → only extracts font (theme falls back to CLI or default)
-// - "preview-1.md" → no extraction (CLI flags apply to all files)
-//
-// See scripts/generate-preview.ts for the preview generation workflow.
-const extractPreviewConfig = (filename: string): { theme?: string; font?: string } | null => {
-  // Remove .md extension
-  const nameWithoutExt = filename.replace(MD_EXTENSION, "");
-
-  // Check if it matches theme-font pattern
-  const parts = nameWithoutExt.split("-");
-  if (parts.length === 2) {
-    const [theme, font] = parts;
-    return { theme, font };
-  }
-
-  return null;
-};
-
 // Helper: handle markdown file view
-const handleMarkdownView = async (
-  viewPath: string,
-  config: Config,
-  files: MarkdownFile[],
-  clientScript: string,
-  res: import("node:http").ServerResponse
-): Promise<void> => {
+const handleMarkdownView = async (params: {
+  viewPath: string;
+  config: Config;
+  files: MarkdownFile[];
+  clientScript: string;
+  res: import("node:http").ServerResponse;
+  eventService: EventService | null;
+}): Promise<void> => {
+  const { viewPath, config, files, clientScript, res, eventService } = params;
   const markdown = await readMarkdownFile(config.directory, viewPath);
 
   if (!markdown) {
@@ -103,26 +86,31 @@ const handleMarkdownView = async (
   }
 
   try {
-    // Check if this is a preview file and extract theme/font from filename
-    const filename = viewPath.split("/").pop() ?? viewPath;
-    const previewConfig = extractPreviewConfig(filename);
+    // Inject highlight marks into markdown before rendering
+    let markdownWithHighlights = markdown;
+    if (eventService) {
+      const pathModule = await import("node:path");
+      const highlightsModule = await import("./highlights");
+      const db = eventService.getDatabase();
+      const absolutePath = pathModule.join(config.directory, viewPath);
+      const resource = highlightsModule.getResourceByPath(db, absolutePath);
 
-    // Override config with preview settings if detected
-    const renderConfig = previewConfig
-      ? {
-          ...config,
-          theme: previewConfig.theme ?? config.theme,
-          fontTheme: previewConfig.font ?? config.fontTheme,
+      if (resource) {
+        const highlights = highlightsModule.getHighlightsByResource(db, resource.id);
+        if (highlights.length > 0) {
+          markdownWithHighlights = injectHighlightMarks(markdown, highlights);
         }
-      : config;
+      }
+    }
 
-    const { html, toc } = await processMarkdown(markdown, renderConfig.theme);
+    const filename = viewPath.split("/").pop() ?? viewPath;
+    const { html, toc } = await processMarkdown(markdownWithHighlights, config.theme);
     const page = generateMarkdownPage({
       html,
       toc,
       fileName: filename,
       files,
-      config: renderConfig,
+      config,
       currentPath: viewPath,
       clientScript,
     });
@@ -141,8 +129,41 @@ const handleMarkdownView = async (
   }
 };
 
+// Helper: inject highlight marks into markdown source
+const injectHighlightMarks = (
+  markdown: string,
+  highlights: Array<{
+    id: string;
+    startOffset: number;
+    endOffset: number;
+    isStale: boolean;
+  }>
+): string => {
+  // Filter out stale highlights - don't render them inline
+  const activeHighlights = highlights.filter((h) => !h.isStale);
+
+  // Sort highlights by start offset in reverse order
+  const sorted = [...activeHighlights].sort((a, b) => b.startOffset - a.startOffset);
+
+  let result = markdown;
+
+  // Apply highlights from end to start to avoid offset shifts
+  for (const highlight of sorted) {
+    const before = result.slice(0, highlight.startOffset);
+    const text = result.slice(highlight.startOffset, highlight.endOffset);
+    const after = result.slice(highlight.endOffset);
+
+    // Create mark element with highlight ID
+    const mark = `<mark class="llmd-highlight" data-highlight-id="${highlight.id}">${text}</mark>`;
+
+    result = before + mark + after;
+  }
+
+  return result;
+};
+
 // Helper: parse JSON body from request
-const parseJsonBody = (req: import("node:http").IncomingMessage): Promise<unknown> =>
+const _parseJsonBody = (req: import("node:http").IncomingMessage): Promise<unknown> =>
   new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk) => {
@@ -179,90 +200,23 @@ const createHandler = (
       console.log(`[${timestamp}] ${req.method} ${pathname}`);
     }
 
-    // Route: POST /api/events - Record event
-    if (pathname === "/api/events" && req.method === "POST") {
-      if (!eventService) {
-        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
-        return;
-      }
-
-      try {
-        const body = (await parseJsonBody(req)) as {
-          type: "view" | "open";
-          path: string;
-          resourceType: "file" | "dir";
-        };
-
-        // Convert relative path to absolute
-        const absolutePath = body.path.startsWith("/")
-          ? body.path
-          : join(config.directory, body.path);
-
-        eventService.recordEvent(body.type, absolutePath, body.resourceType);
-        sendResponse(res, 204, {}, "");
-        return;
-      } catch (err) {
-        console.error("[events] Failed to record event:", err);
-        sendResponse(res, 400, { "Content-Type": "text/plain" }, "Invalid request");
-        return;
-      }
+    // API Routes - delegated to route handler
+    if (await handleApiRoute(req, res, pathname, url, config, eventService)) {
+      return;
     }
 
-    // Route: GET /api/analytics - Get analytics data
-    if (pathname === "/api/analytics" && req.method === "GET") {
-      if (!eventService) {
-        sendResponse(
-          res,
-          501,
-          { "Content-Type": "application/json" },
-          JSON.stringify({ error: "Events disabled" })
-        );
-        return;
-      }
-
+    // Route: Client JavaScript bundle
+    if (pathname === "/_client.js") {
       try {
-        const directory = url.searchParams.get("directory") || undefined;
-        const analytics = await eventService.getAnalytics(directory);
-        sendResponse(res, 200, { "Content-Type": "application/json" }, JSON.stringify(analytics));
+        const clientJs = await getClientScript();
+        res.writeHead(200, {
+          "Content-Type": "application/javascript",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        });
+        res.end(clientJs);
         return;
-      } catch (err) {
-        console.error("[events] Failed to get analytics:", err);
-        sendResponse(
-          res,
-          500,
-          { "Content-Type": "application/json" },
-          JSON.stringify({ error: "Failed to get analytics" })
-        );
-        return;
-      }
-    }
-
-    // Route: GET /api/analytics/timeseries - Get time series data
-    if (pathname === "/api/analytics/timeseries" && req.method === "GET") {
-      if (!eventService) {
-        sendResponse(
-          res,
-          501,
-          { "Content-Type": "application/json" },
-          JSON.stringify({ error: "Events disabled" })
-        );
-        return;
-      }
-
-      try {
-        const directory = url.searchParams.get("directory");
-        const days = Number.parseInt(url.searchParams.get("days") || "7", 10);
-        const timeSeries = await eventService.getActivityTimeSeries(directory, days);
-        sendResponse(res, 200, { "Content-Type": "application/json" }, JSON.stringify(timeSeries));
-        return;
-      } catch (err) {
-        console.error("[events] Failed to get timeseries:", err);
-        sendResponse(
-          res,
-          500,
-          { "Content-Type": "application/json" },
-          JSON.stringify({ error: "Failed to get timeseries" })
-        );
+      } catch {
+        sendResponse(res, 404, { "Content-Type": "text/plain" }, "Client script not found");
         return;
       }
     }
@@ -343,6 +297,40 @@ const createHandler = (
       }
     }
 
+    // Route: Highlights page
+    if (pathname === "/highlights") {
+      if (!eventService) {
+        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
+        return;
+      }
+
+      try {
+        const directory = url.searchParams.get("directory") || config.directory;
+        const { generateHighlightsPage } = await import("./highlights-template");
+        const db = eventService.getDatabase();
+        const html = generateHighlightsPage({
+          directory,
+          config,
+          files,
+          clientScript,
+          db,
+        });
+        sendResponse(res, 200, htmlHeaders(), html);
+        return;
+      } catch (err) {
+        console.error("[highlights] Failed to generate highlights page:", err);
+        const errorHtml = generateErrorPage({
+          errorCode: 500,
+          message: "Failed to load highlights",
+          files,
+          config,
+          clientScript,
+        });
+        sendResponse(res, 500, htmlHeaders(), errorHtml);
+        return;
+      }
+    }
+
     // Route: Home page (directory index)
     if (pathname === "/") {
       const html = generateIndexPage(files, config, clientScript);
@@ -353,7 +341,7 @@ const createHandler = (
     // Route: View markdown file
     const viewPath = parseViewPath(pathname);
     if (viewPath) {
-      await handleMarkdownView(viewPath, config, files, clientScript, res);
+      await handleMarkdownView({ viewPath, config, files, clientScript, res, eventService });
       return;
     }
 
@@ -399,7 +387,9 @@ export const startServer = async (config: Config, files: MarkdownFile[]) => {
   }
 
   // Bundle client scripts once at startup
-  const clientScript = await getClientScriptTag();
+  // Use external script tag if source maps are available (dev mode)
+  const devMode = await hasSourceMaps();
+  const clientScript = devMode ? getClientScriptTagExternal() : await getClientScriptTag();
 
   const server = createServer(createHandler(config, files, clientScript, eventService));
 

@@ -8,8 +8,7 @@ export type Config = {
   // Server options
   port: number;
   // UI options
-  theme: string; // Theme name (built-in or custom)
-  fontTheme: string; // Font name (built-in or custom)
+  theme: string; // Theme name (built-in or custom) - includes colors + fonts
   // Behavior flags
   open: boolean;
   watch: boolean;
@@ -30,15 +29,21 @@ export type ParsedArgs = {
   flags: {
     port?: number;
     theme?: string;
-    fontTheme?: string;
     open?: boolean;
     watch?: boolean;
     help?: boolean;
     version?: boolean;
     analytics?: boolean;
     analyticsSubcommand?: "view" | "enable" | "disable";
+    highlights?: boolean;
+    highlightsSubcommand?: "enable" | "disable";
     db?: boolean;
     dbSubcommand?: "check" | "cleanup" | "clear";
+    archive?: boolean;
+    archiveSubcommand?: "list" | "show" | "clear";
+    archivePath?: string; // For 'archive show <path>'
+    export?: boolean;
+    exportPath?: string; // For 'export [path]'
     days?: number;
     docs?: boolean;
   };
@@ -48,9 +53,15 @@ export type CliResult =
   | { type: "config"; config: Config }
   | { type: "analytics-enable" }
   | { type: "analytics-disable" }
+  | { type: "highlights-enable" }
+  | { type: "highlights-disable" }
   | { type: "db-check" }
   | { type: "db-cleanup"; days: number }
   | { type: "db-clear" }
+  | { type: "archive-list" }
+  | { type: "archive-show"; path: string }
+  | { type: "archive-clear" }
+  | { type: "export"; path: string }
   | { type: "docs" }
   | { type: "exit" };
 
@@ -110,5 +121,7 @@ export type EventService = {
   getDatabaseStats: () => Promise<DatabaseStats>;
   cleanupOldEvents: (days: number) => Promise<{ deletedEvents: number; deletedResources: number }>;
   clearDatabase: () => Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer for database access
+  getDatabase: () => any;
   close: () => void;
 };
