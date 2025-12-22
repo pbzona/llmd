@@ -48,6 +48,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       fileIcon: "#fbbf24",
       highlightBg: "#ffdc00",
       highlightStaleBg: "#ff5252",
+      headingColor: "#ffffff",
     },
     fonts: {
       body: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -70,6 +71,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       fileIcon: "#f97316",
       highlightBg: "#ffeb3b",
       highlightStaleBg: "#ffcdd2",
+      headingColor: "#000000",
     },
     fonts: {
       body: "Georgia, 'Times New Roman', Times, serif",
@@ -91,6 +93,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       fileIcon: "#ebcb8b",
       highlightBg: "#ebcb8b", // Nord yellow
       highlightStaleBg: "#bf616a", // Nord red
+      headingColor: "#eceff4", // Nord snow storm
     },
     fonts: {
       body: '"Inter", sans-serif',
@@ -114,6 +117,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       fileIcon: "#ffb86c",
       highlightBg: "#f1fa8c", // Dracula yellow
       highlightStaleBg: "#ff5555", // Dracula red
+      headingColor: "#bd93f9", // Dracula purple
     },
     fonts: {
       body: '"Space Grotesk", sans-serif',
@@ -137,6 +141,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       fileIcon: "#dc322f", // Red for better contrast than orange
       highlightBg: "#b58900", // Solarized yellow
       highlightStaleBg: "#dc322f", // Solarized red
+      headingColor: "#002b36", // Solarized base03 - darkest
     },
     fonts: {
       body: "Newsreader, serif",
@@ -160,6 +165,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       fileIcon: "#fd971f",
       highlightBg: "#e6db74", // Monokai yellow
       highlightStaleBg: "#f92672", // Monokai pink/red
+      headingColor: "#a6e22e", // Monokai green
     },
     fonts: {
       body: '"SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace',
