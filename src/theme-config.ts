@@ -187,7 +187,7 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
     colors: {
       bg: "#3a2732",
       fg: "#fff4eb",
-      border: "#FFE2C7",
+      border: "#FFE2C7bb",
       hover: "#644957",
       accent: "#5A4e8f",
       codeBg: "#35212B",

@@ -216,7 +216,7 @@ const getStyles = (themeName: string): string => {
       top: 50%;
       width: 8px;
       height: 1px;
-      background: ${isDark ? "#333" : "#ddd"};
+      background: var(--border);
     }
     
     .sidebar-nav a:hover {
