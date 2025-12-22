@@ -109,13 +109,13 @@ Commands:
   Use 'llmd <command> --help' for more information about a command.
 
 Options:
-  --port <number>          Port to bind to (default: random)
-  --theme <name>           Color theme (default: dark)
-  --fonts <name>           Font combination (default: sans)
-  --open / --no-open       Auto-open browser (default: --open)
-  --watch / --no-watch     Reload on file changes (default: --no-watch)
+  -p, --port <number>      Port to bind to (default: random)
+  -t, --theme <name>       Color theme (default: dark)
+  -o, --open               Auto-open browser (default)
+  -n, --no-open            Don't auto-open browser
+  -w, --watch              Reload on file changes
+  -v, --version            Show version
   -h, --help               Show this help
-  --version                Show version
 
 For more information, visit: https://github.com/pbzona/llmd
 `;
@@ -177,11 +177,11 @@ const parseArchiveCommand = (
 
 // Helper: parse boolean flags
 const parseBooleanFlag = (arg: string, flags: ParsedArgs["flags"]): boolean => {
-  if (arg === "--help" || arg === "-h") {
+  if (arg === "-h" || arg === "--help") {
     flags.help = true;
     return true;
   }
-  if (arg === "--version") {
+  if (arg === "-v" || arg === "--version") {
     flags.version = true;
     return true;
   }
@@ -189,15 +189,15 @@ const parseBooleanFlag = (arg: string, flags: ParsedArgs["flags"]): boolean => {
     flags.docs = true;
     return true;
   }
-  if (arg === "--open") {
+  if (arg === "-o" || arg === "--open") {
     flags.open = true;
     return true;
   }
-  if (arg === "--no-open") {
+  if (arg === "-n" || arg === "--no-open") {
     flags.open = false;
     return true;
   }
-  if (arg === "--watch") {
+  if (arg === "-w" || arg === "--watch") {
     flags.watch = true;
     return true;
   }
@@ -215,11 +215,11 @@ const parseValueFlag = (
   index: number,
   flags: ParsedArgs["flags"]
 ): number => {
-  if (arg === "--port") {
+  if (arg === "-p" || arg === "--port") {
     flags.port = Number.parseInt(args[index + 1] ?? "0", 10);
     return index + 1;
   }
-  if (arg === "--theme") {
+  if (arg === "-t" || arg === "--theme") {
     flags.theme = args[index + 1];
     return index + 1;
   }

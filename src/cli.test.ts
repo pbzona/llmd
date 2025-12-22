@@ -33,6 +33,29 @@ describe("parseArgs", () => {
     expect(result.flags.version).toBe(true);
   });
 
+  test("parses short flags", () => {
+    const result = parseArgs(["-p", "3000", "-t", "light", "-o", "-w"]);
+    expect(result.flags.port).toBe(3000);
+    expect(result.flags.theme).toBe("light");
+    expect(result.flags.open).toBe(true);
+    expect(result.flags.watch).toBe(true);
+  });
+
+  test("parses short version flag", () => {
+    const result = parseArgs(["-v"]);
+    expect(result.flags.version).toBe(true);
+  });
+
+  test("parses short help flag", () => {
+    const result = parseArgs(["-h"]);
+    expect(result.flags.help).toBe(true);
+  });
+
+  test("parses short no-open flag", () => {
+    const result = parseArgs(["-n"]);
+    expect(result.flags.open).toBe(false);
+  });
+
   test("parses analytics subcommands", () => {
     const enableResult = parseArgs(["analytics", "enable"]);
     expect(enableResult.flags.analytics).toBe(true);
