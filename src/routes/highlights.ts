@@ -60,18 +60,13 @@ export const handleCreateHighlight = async (
   try {
     const body = (await parseJsonBody(req)) as {
       resourcePath: string;
-      startOffset: number;
-      endOffset: number;
       highlightedText: string;
+      occurrenceIndex?: number;
       notes?: string;
     };
 
     // Validate required fields
-    const hasRequiredFields =
-      body.resourcePath &&
-      typeof body.startOffset === "number" &&
-      typeof body.endOffset === "number" &&
-      body.highlightedText;
+    const hasRequiredFields = body.resourcePath && body.highlightedText;
 
     if (!hasRequiredFields) {
       sendJson(res, 400, { error: "Missing required fields" });
@@ -90,9 +85,35 @@ export const handleCreateHighlight = async (
       return;
     }
 
-    // Read file content and compute hash
+    // Read file content (markdown source) and compute hash
     const fileContent = readFileSync(absolutePath, "utf-8");
     const contentHash = computeFileHash(fileContent);
+
+    // Calculate offsets from the markdown source with occurrence index
+    const { findTextOffset } = await import("../highlights");
+    const occurrenceIndex = body.occurrenceIndex ?? 0;
+    const offsets = findTextOffset(fileContent, body.highlightedText, occurrenceIndex);
+
+    if (!offsets) {
+      sendJson(res, 400, {
+        error:
+          "Could not locate text in source file. Text may not exist at the specified occurrence.",
+      });
+      return;
+    }
+
+    // Verify the text matches exactly (or with normalized whitespace)
+    const extractedText = fileContent.slice(offsets.startOffset, offsets.endOffset);
+    const normalizeWhitespace = (text: string) => text.replace(/\s+/g, " ").trim();
+
+    // Check if text is fundamentally different (not just whitespace)
+    let isStale = false;
+    const exactMatch = extractedText === body.highlightedText;
+    if (!exactMatch) {
+      const whitespaceOnlyDiff =
+        normalizeWhitespace(extractedText) === normalizeWhitespace(body.highlightedText);
+      isStale = !whitespaceOnlyDiff;
+    }
 
     // Create backup if this is the first highlight for this resource
     if (!resource.backupPath) {
@@ -101,18 +122,23 @@ export const handleCreateHighlight = async (
       updateResourceBackup(ctx.db, resource.id, contentHash, backupPath);
     }
 
-    // Create highlight
+    // Create highlight with offsets calculated from markdown source
     const highlightId = createHighlight({
       db: ctx.db,
       resourceId: resource.id,
-      startOffset: body.startOffset,
-      endOffset: body.endOffset,
+      startOffset: offsets.startOffset,
+      endOffset: offsets.endOffset,
       highlightedText: body.highlightedText,
       contentHash,
       notes: body.notes,
     });
 
-    sendJson(res, 201, { id: highlightId });
+    // Mark as stale if needed
+    if (isStale) {
+      markHighlightStale(ctx.db, highlightId);
+    }
+
+    sendJson(res, 201, { id: highlightId, isStale });
   } catch (err) {
     console.error("[highlights] Failed to create highlight:", err);
     sendJson(res, 500, { error: "Failed to create highlight" });
