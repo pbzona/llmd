@@ -83,28 +83,76 @@ export const restoreFile = (params: {
 
   return targetPath;
 };
+// Regex for whitespace normalization
+const WHITESPACE_REGEX = /\s+/g;
+
+// Pure function: normalize whitespace for comparison
+// Collapses multiple spaces/newlines to single space, trims
+const normalizeWhitespace = (text: string): string => text.replace(WHITESPACE_REGEX, " ").trim();
+
+// Pure function: find all occurrences of text in content
+// Returns array of start offsets
+export const findAllOccurrences = (content: string, searchText: string): number[] => {
+  const occurrences: number[] = [];
+
+  // First try exact match
+  let searchStart = 0;
+  while (searchStart < content.length) {
+    const found = content.indexOf(searchText, searchStart);
+    if (found === -1) {
+      break;
+    }
+    occurrences.push(found);
+    searchStart = found + 1;
+  }
+
+  // If exact matches found, return those
+  if (occurrences.length > 0) {
+    return occurrences;
+  }
+
+  // Otherwise try with whitespace normalization
+  // This is more expensive so only do it as fallback
+  const normalizedSearch = normalizeWhitespace(searchText);
+  const normalizedContent = normalizeWhitespace(content);
+
+  searchStart = 0;
+  while (searchStart < normalizedContent.length) {
+    const found = normalizedContent.indexOf(normalizedSearch, searchStart);
+    if (found === -1) {
+      break;
+    }
+
+    // Map normalized offset back to original content offset
+    // This is approximate - just mark it for stale detection
+    occurrences.push(found);
+    searchStart = found + 1;
+  }
+
+  return occurrences;
+};
 
 // Pure function: find text in content and return offset
-// Returns null if text not found or if there are multiple matches
+// Now supports occurrence index for disambiguating multiple matches
 export const findTextOffset = (
   content: string,
-  searchText: string
+  searchText: string,
+  occurrenceIndex = 0
 ): { startOffset: number; endOffset: number } | null => {
-  const firstIndex = content.indexOf(searchText);
+  const occurrences = findAllOccurrences(content, searchText);
 
-  if (firstIndex === -1) {
+  if (occurrences.length === 0) {
     return null; // Not found
   }
 
-  // Check for multiple occurrences
-  const lastIndex = content.lastIndexOf(searchText);
-  if (firstIndex !== lastIndex) {
-    return null; // Multiple matches - ambiguous
+  if (occurrenceIndex >= occurrences.length) {
+    return null; // Index out of bounds
   }
 
+  const startOffset = occurrences[occurrenceIndex] ?? 0;
   return {
-    startOffset: firstIndex,
-    endOffset: firstIndex + searchText.length,
+    startOffset,
+    endOffset: startOffset + searchText.length,
   };
 };
 

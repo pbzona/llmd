@@ -103,11 +103,36 @@ describe("findTextOffset", () => {
     expect(result).toBeNull();
   });
 
-  test("returns null when text appears multiple times", () => {
+  test("returns first occurrence when text appears multiple times", () => {
     const content = "The quick brown fox jumps over the brown dog";
     const searchText = "brown";
 
-    const result = findTextOffset(content, searchText);
+    // Should return first occurrence by default (index 0)
+    const result = findTextOffset(content, searchText, 0);
+
+    expect(result).toEqual({
+      startOffset: 10,
+      endOffset: 15,
+    });
+  });
+
+  test("returns second occurrence with index 1", () => {
+    const content = "The quick brown fox jumps over the brown dog";
+    const searchText = "brown";
+
+    const result = findTextOffset(content, searchText, 1);
+
+    expect(result).toEqual({
+      startOffset: 35,
+      endOffset: 40,
+    });
+  });
+
+  test("returns null when occurrence index out of bounds", () => {
+    const content = "The quick brown fox";
+    const searchText = "brown";
+
+    const result = findTextOffset(content, searchText, 5);
 
     expect(result).toBeNull();
   });
@@ -179,7 +204,7 @@ describe("validateHighlight", () => {
     expect(result.isValid).toBe(false);
   });
 
-  test("marks as invalid when text appears multiple times", () => {
+  test("finds text when it appears multiple times (uses first occurrence)", () => {
     const originalContent = "The quick brown fox";
     const modifiedContent = "brown The quick brown fox brown";
     const originalHash = computeFileHash(originalContent);
@@ -192,7 +217,10 @@ describe("validateHighlight", () => {
       highlightedText: "brown",
     });
 
-    expect(result.isValid).toBe(false);
+    // Now finds the first occurrence instead of marking as invalid
+    expect(result.isValid).toBe(true);
+    expect(result.newStartOffset).toBe(0);
+    expect(result.newEndOffset).toBe(5);
   });
 });
 
