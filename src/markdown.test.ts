@@ -131,6 +131,20 @@ describe("generateTOC", () => {
     const toc = generateTOC([]);
     expect(toc).toBe("");
   });
+
+  test("converts backtick code to monospace in TOC", () => {
+    const headings = [
+      { level: 1, text: "The `foo` function", id: "the-foo-function" },
+      { level: 2, text: "Using `bar` and `baz`", id: "using-bar-and-baz" },
+    ];
+    const toc = generateTOC(headings);
+
+    expect(toc).toContain("<code>foo</code>");
+    expect(toc).toContain("<code>bar</code>");
+    expect(toc).toContain("<code>baz</code>");
+    expect(toc).not.toContain("`foo`");
+    expect(toc).not.toContain("`bar`");
+  });
 });
 
 describe("addHeadingIds", () => {

@@ -64,6 +64,9 @@ export const renderMarkdown = (markdown: string): string => {
   return html;
 };
 
+// Pure function: convert inline backtick code to <code> tags
+const renderInlineCode = (text: string): string => text.replace(/`([^`]+)`/g, "<code>$1</code>");
+
 // Pure function: generate table of contents HTML from headings
 export const generateTOC = (
   headings: Array<{ level: number; text: string; id: string }>
@@ -73,7 +76,10 @@ export const generateTOC = (
   }
 
   const items = headings
-    .map((h) => `<li class="toc-level-${h.level}"><a href="#${h.id}">${h.text}</a></li>`)
+    .map(
+      (h) =>
+        `<li class="toc-level-${h.level}"><a href="#${h.id}">${renderInlineCode(h.text)}</a></li>`
+    )
     .join("\n");
 
   return `<nav class="toc collapsed"><h3>Contents</h3><ul>${items}</ul></nav>`;
