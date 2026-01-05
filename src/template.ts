@@ -687,25 +687,25 @@ const ANALYTICS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" heigh
 const HIGHLIGHTS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`;
 
 // Pure function: render tree nodes recursively
-const renderTreeNodes = (nodes: TreeNode[], currentPath?: string): string =>
+const renderTreeNodes = (nodes: TreeNode[], currentPath?: string, depth = 0): string =>
   nodes
     .filter((node) => hasFiles(node)) // Only render nodes that have files
     .map((node) => {
       if (node.type === "directory") {
         const children =
-          node.children.length > 0 ? renderTreeNodes(node.children, currentPath) : "";
+          node.children.length > 0 ? renderTreeNodes(node.children, currentPath, depth + 1) : "";
         // Only render directory if it has children after filtering
         if (!children) {
           return "";
         }
         return `<li class="dir-item">
-          <div class="nav-link-dir dir-label depth-${node.depth}">${FOLDER_ICON}<span>${node.name}/</span></div>
+          <div class="nav-link-dir dir-label depth-${depth}">${FOLDER_ICON}<span>${node.name}/</span></div>
           <ul>${children}</ul>
         </li>`;
       }
       const isActive = currentPath === node.path;
       const activeClass = isActive ? "active" : "";
-      return `<li><a href="/view/${node.path}" class="nav-link-file depth-${node.depth} ${activeClass}" data-file-path="${node.path}">${FILE_ICON}<span>${node.name}</span></a></li>`;
+      return `<li><a href="/view/${node.path}" class="nav-link-file depth-${depth} ${activeClass}" data-file-path="${node.path}">${FILE_ICON}<span>${node.name}</span></a></li>`;
     })
     .join("\n");
 
