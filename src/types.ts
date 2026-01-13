@@ -13,6 +13,8 @@ export type Config = {
   open: boolean;
   watch: boolean;
   openToAnalytics?: boolean;
+  // Tree depth limit for file scanning
+  treeDepth: number;
 };
 
 export type MarkdownFile = {
@@ -46,6 +48,7 @@ export type ParsedArgs = {
     exportPath?: string; // For 'export [path]'
     days?: number;
     docs?: boolean;
+    treeDepth?: number;
   };
 };
 

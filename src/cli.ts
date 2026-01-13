@@ -111,6 +111,7 @@ Commands:
 Options:
   -p, --port <number>      Port to bind to (default: random)
   -t, --theme <name>       Color theme (default: dark)
+  -d, --tree-depth <num>   Maximum tree depth to display (default: 5)
   -o, --open               Auto-open browser (default)
   -n, --no-open            Don't auto-open browser
   -w, --watch              Reload on file changes
@@ -223,6 +224,10 @@ const parseValueFlag = (
     flags.theme = args[index + 1];
     return index + 1;
   }
+  if (arg === "-d" || arg === "--tree-depth") {
+    flags.treeDepth = Number.parseInt(args[index + 1] ?? "5", 10);
+    return index + 1;
+  }
   if (arg === "analytics") {
     flags.analytics = true;
     const { subcommand, nextIndex } = parseAnalyticsCommand(args, index);
@@ -330,6 +335,7 @@ export const createConfig = (parsed: ParsedArgs): Config => {
     open: flags.open ?? true,
     watch: flags.watch ?? false,
     openToAnalytics: flags.analytics ?? false,
+    treeDepth: flags.treeDepth ?? 5,
   };
 };
 
@@ -346,6 +352,10 @@ export const validateConfig = (config: Config): void => {
 
   if (config.port < 0 || config.port > 65_535) {
     throw new Error(`Invalid port: ${config.port}. Must be 0-65535`);
+  }
+
+  if (config.treeDepth < 1 || config.treeDepth > 20) {
+    throw new Error(`Invalid tree depth: ${config.treeDepth}. Must be 1-20`);
   }
 };
 

@@ -63,7 +63,7 @@ const handleDocsCommand = async (): Promise<void> => {
   const config = result.config;
 
   // Scan and start server
-  const files = await scanMarkdownFiles(config.directory);
+  const files = await scanMarkdownFiles(config.directory, config.treeDepth);
   const server = await startServer(config, files);
   const url = getServerUrl(server);
 
@@ -383,7 +383,7 @@ const main = async () => {
 
     // Scan for markdown files
     console.log(`→ Scanning ${config.directory}...`);
-    const files = await scanMarkdownFiles(config.directory);
+    const files = await scanMarkdownFiles(config.directory, config.treeDepth);
     console.log(`✓ Found ${files.length} markdown file${files.length === 1 ? "" : "s"}\n`);
 
     // Start server
