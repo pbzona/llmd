@@ -699,13 +699,13 @@ const renderTreeNodes = (nodes: TreeNode[], currentPath?: string, depth = 0): st
           return "";
         }
         return `<li class="dir-item">
-          <div class="nav-link-dir dir-label depth-${depth}">${FOLDER_ICON}<span>${node.name}/</span></div>
+          <div class="nav-link-dir dir-label depth-0">${FOLDER_ICON}<span>${node.name}/</span></div>
           <ul>${children}</ul>
         </li>`;
       }
       const isActive = currentPath === node.path;
       const activeClass = isActive ? "active" : "";
-      return `<li><a href="/view/${node.path}" class="nav-link-file depth-${depth} ${activeClass}" data-file-path="${node.path}">${FILE_ICON}<span>${node.name}</span></a></li>`;
+      return `<li><a href="/view/${node.path}" class="nav-link-file depth-0 ${activeClass}" data-file-path="${node.path}">${FILE_ICON}<span>${node.name}</span></a></li>`;
     })
     .join("\n");
 
