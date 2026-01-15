@@ -109,77 +109,80 @@ const getStyles = (themeName: string): string => {
     
     .sidebar-nav {
       padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
-    
+
     .sidebar-nav ul {
       list-style: none;
     }
-    
+
     .sidebar-nav li {
       margin: 2px 0;
     }
-    
-    .sidebar-nav .dir-item {
+
+    /* Directory group styles */
+    .sidebar-nav .dir-group {
       margin: 6px 0;
-      position: relative;
     }
-    
-    .sidebar-nav .dir-item.collapsed > ul {
+
+    .sidebar-nav .dir-group.collapsed > .dir-group-content {
       display: none;
     }
-    
-    .sidebar-nav .dir-item > ul {
-      margin-top: 2px;
-      position: relative;
-      padding-left: 12px;
-      border-left: 1px solid var(--border);
-      margin-left: 6px;
-    }
-    
-    .sidebar-nav .dir-label {
+
+    .sidebar-nav .dir-group-header {
       padding: 7px 8px 7px 6px;
       font-size: 0.9375rem;
       font-weight: 600;
       color: var(--fg);
       text-transform: none;
-      position: relative;
       display: flex;
       align-items: center;
       gap: 8px;
       letter-spacing: 0.01em;
       border-radius: 6px;
       transition: background 0.15s;
+      cursor: pointer;
+      user-select: none;
     }
-    
-    .sidebar-nav .dir-label:hover {
+
+    .sidebar-nav .dir-group-header:hover {
       background: var(--hover);
     }
-    
+
+    .sidebar-nav .dir-group-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-top: 2px;
+    }
+
     .dir-chevron {
       display: inline-flex;
       transition: transform 0.2s;
       flex-shrink: 0;
       opacity: 0.6;
     }
-    
-    .dir-item.collapsed .dir-chevron {
+
+    .dir-group.collapsed .dir-chevron {
       transform: rotate(-90deg);
     }
-    
+
     .dir-chevron svg {
       width: 16px;
       height: 16px;
     }
-    
-    .sidebar-nav .dir-label span,
+
+    .sidebar-nav .dir-group-header span,
     .sidebar-nav a span {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    
-    .sidebar-nav .dir-label svg {
+
+    .sidebar-nav .dir-group-header svg {
       width: 18px;
       height: 18px;
       flex-shrink: 0;
@@ -197,10 +200,9 @@ const getStyles = (themeName: string): string => {
       border-radius: 6px;
       font-size: 0.9375rem;
       transition: background 0.15s;
-      position: relative;
       line-height: 1.4;
     }
-    
+
     .sidebar-nav a svg {
       width: 18px;
       height: 18px;
@@ -208,34 +210,15 @@ const getStyles = (themeName: string): string => {
       color: ${colors.fileIcon};
       stroke: currentColor;
     }
-    
-    .sidebar-nav a::before {
-      content: "";
-      position: absolute;
-      left: -13px;
-      top: 50%;
-      width: 8px;
-      height: 1px;
-      background: var(--border);
-    }
-    
+
     .sidebar-nav a:hover {
       background: var(--hover);
     }
-    
+
     .sidebar-nav a.active {
       background: var(--accent);
       color: ${isDark ? "rgba(0, 0, 0, 0.7)" : "rgba(255, 255, 255, 0.7)"};
       font-weight: 600;
-    }
-    
-    .sidebar-nav .depth-0 { padding-left: 6px; }
-    .sidebar-nav .depth-1 { padding-left: 18px; }
-    .sidebar-nav .depth-2 { padding-left: 30px; }
-    .sidebar-nav .depth-3 { padding-left: 42px; }
-    
-    .sidebar-nav > ul > li > a::before {
-      display: none;
     }
     
     /* Admin Section */
@@ -268,7 +251,22 @@ const getStyles = (themeName: string): string => {
       max-width: 800px;
       margin: 0 auto;
     }
-    
+
+    .file-metadata {
+      margin-bottom: 24px;
+      padding: 10px 14px;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .file-path {
+      font-family: ${fontFamilies.code};
+      font-size: 0.8125rem;
+      color: ${isDark ? "#a0a0a0" : "#666"};
+      opacity: 0.85;
+    }
+
     .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 {
       font-family: ${fontFamilies.heading};
       font-weight: 700;
@@ -610,71 +608,56 @@ const getStyles = (themeName: string): string => {
   `;
 };
 
-// Type for tree nodes
-type TreeNode = {
-  type: "file" | "directory";
-  name: string;
-  path: string; // File path or directory path
-  depth: number;
-  children: TreeNode[];
+// Type for flat directory grouping
+type DirectoryGroup = {
+  directoryPath: string; // e.g., "docs" or "" for root
+  directoryName: string; // e.g., "docs" or displayed name for root
+  files: MarkdownFile[];
 };
 
-// Pure function: build tree structure from flat file list
-const buildTree = (files: MarkdownFile[]): TreeNode[] => {
-  const root: TreeNode[] = [];
-  const dirMap = new Map<string, TreeNode>();
+// Pure function: group files by their immediate parent directory
+const groupFilesByDirectory = (files: MarkdownFile[]): DirectoryGroup[] => {
+  const groupMap = new Map<string, MarkdownFile[]>();
 
+  // Group files by their immediate parent directory
   for (const file of files) {
-    const parts = file.path.split("/");
-    let currentLevel = root;
-    let currentPath = "";
+    const lastSlashIndex = file.path.lastIndexOf("/");
+    const parentDir = lastSlashIndex === -1 ? "" : file.path.slice(0, lastSlashIndex);
 
-    // Process each directory in the path
-    for (let i = 0; i < parts.length - 1; i++) {
-      const dirName = parts[i];
-      if (!dirName) {
-        continue;
-      }
+    if (!groupMap.has(parentDir)) {
+      groupMap.set(parentDir, []);
+    }
+    groupMap.get(parentDir)?.push(file);
+  }
 
-      currentPath = currentPath.length > 0 ? `${currentPath}/${dirName}` : dirName;
+  // Convert map to array of DirectoryGroup objects
+  const groups: DirectoryGroup[] = [];
+  for (const [dirPath, dirFiles] of groupMap.entries()) {
+    // Sort files alphabetically within each group
+    const sortedFiles = [...dirFiles].sort((a, b) => a.name.localeCompare(b.name));
 
-      // Check if directory node already exists
-      const existingDir = dirMap.get(currentPath);
-      if (existingDir) {
-        currentLevel = existingDir.children;
-      } else {
-        const dirNode: TreeNode = {
-          type: "directory",
-          name: dirName,
-          path: currentPath,
-          depth: i,
-          children: [],
-        };
-        dirMap.set(currentPath, dirNode);
-        currentLevel.push(dirNode);
-        currentLevel = dirNode.children;
-      }
+    // Extract directory name from full path (up to 2 levels)
+    let dirName = "";
+    if (dirPath !== "") {
+      const segments = dirPath.split("/");
+      dirName = segments.slice(-2).join("/");
     }
 
-    // Add the file
-    currentLevel.push({
-      type: "file",
-      name: file.name,
-      path: file.path,
-      depth: file.depth,
-      children: [],
+    groups.push({
+      directoryPath: dirPath,
+      directoryName: dirName,
+      files: sortedFiles,
     });
   }
 
-  return root;
-};
+  // Sort groups: root first, then alphabetically by path
+  groups.sort((a, b) => {
+    if (a.directoryPath === "") return -1;
+    if (b.directoryPath === "") return 1;
+    return a.directoryPath.localeCompare(b.directoryPath);
+  });
 
-// Pure function: check if a node has any descendant files
-const hasFiles = (node: TreeNode): boolean => {
-  if (node.type === "file") {
-    return true;
-  }
-  return node.children.some((child) => hasFiles(child));
+  return groups;
 };
 
 // SVG icons (from Lucide, MIT licensed)
@@ -686,28 +669,46 @@ const ANALYTICS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" heigh
 
 const HIGHLIGHTS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`;
 
-// Pure function: render tree nodes recursively
-const renderTreeNodes = (nodes: TreeNode[], currentPath?: string, depth = 0): string =>
-  nodes
-    .filter((node) => hasFiles(node)) // Only render nodes that have files
-    .map((node) => {
-      if (node.type === "directory") {
-        const children =
-          node.children.length > 0 ? renderTreeNodes(node.children, currentPath, depth + 1) : "";
-        // Only render directory if it has children after filtering
-        if (!children) {
-          return "";
-        }
-        return `<li class="dir-item">
-          <div class="nav-link-dir dir-label depth-0">${FOLDER_ICON}<span>${node.name}/</span></div>
-          <ul>${children}</ul>
-        </li>`;
+const CHEVRON_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+// Pure function: render flat sidebar with directory groups
+const renderFlatSidebar = (groups: DirectoryGroup[], currentPath?: string): string => {
+  let html = "";
+
+  for (const group of groups) {
+    if (group.directoryPath === "") {
+      // Root files - render directly at top level without grouping
+      for (const file of group.files) {
+        const isActive = currentPath === file.path;
+        const activeClass = isActive ? "active" : "";
+        html += `<a href="/view/${file.path}" class="nav-link-file ${activeClass}" data-file-path="${file.path}">${FILE_ICON}<span>${file.name}</span></a>\n`;
       }
-      const isActive = currentPath === node.path;
-      const activeClass = isActive ? "active" : "";
-      return `<li><a href="/view/${node.path}" class="nav-link-file depth-0 ${activeClass}" data-file-path="${node.path}">${FILE_ICON}<span>${node.name}</span></a></li>`;
-    })
-    .join("\n");
+    } else {
+      // Directory group with collapsible header
+      html += `<div class="dir-group" data-dir-path="${group.directoryPath}">
+  <div class="dir-group-header">
+    <span class="dir-chevron">${CHEVRON_ICON}</span>
+    ${FOLDER_ICON}
+    <span>${group.directoryName}</span>
+  </div>
+  <div class="dir-group-content">
+`;
+
+      // Render files in this directory
+      for (const file of group.files) {
+        const isActive = currentPath === file.path;
+        const activeClass = isActive ? "active" : "";
+        html += `    <a href="/view/${file.path}" class="nav-link-file ${activeClass}" data-file-path="${file.path}">${FILE_ICON}<span>${file.name}</span></a>\n`;
+      }
+
+      html += `  </div>
+</div>
+`;
+    }
+  }
+
+  return html;
+};
 
 // Pure function: generate admin section (collapsible)
 const generateAdminSection = (): string => `
@@ -748,12 +749,12 @@ const generateSidebar = (files: MarkdownFile[], currentPath?: string): string =>
     </div>`;
   }
 
-  const tree = buildTree(files);
-  const items = renderTreeNodes(tree, currentPath);
+  const groups = groupFilesByDirectory(files);
+  const items = renderFlatSidebar(groups, currentPath);
 
   return `<nav class="sidebar-nav">
     ${adminSection}
-    <ul>${items}</ul>
+    ${items}
   </nav>`;
 };
 
@@ -922,7 +923,10 @@ type MarkdownPageOptions = {
 // Public function: generate markdown view page
 export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
   const { html, toc, fileName, files, config, currentPath, clientScript } = options;
-  const content = `<div class="content">
+  const content = `<div class="file-metadata">
+    <span class="file-path">${currentPath}</span>
+  </div>
+  <div class="content">
     ${toc}
     ${html}
   </div>`;

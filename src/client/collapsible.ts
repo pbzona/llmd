@@ -3,52 +3,19 @@
 // Storage key for collapsed directories
 const STORAGE_KEY = "llmd-nav-collapsed";
 
-// Regex for removing trailing slashes (top-level to avoid recreation)
-const TRAILING_SLASH = /\/$/;
-
-// Helper: extract directory name from a dir-item element
-const getDirName = (dirItem: Element): string | null => {
-  const dirLabel = dirItem.querySelector(":scope > .dir-label");
-  if (!dirLabel) {
-    return null;
-  }
-  const spans = Array.from(dirLabel.querySelectorAll("span"));
-  if (spans.length === 0) {
-    return null;
-  }
-  // biome-ignore lint/style/noNonNullAssertion: Length check above ensures element exists
-  // biome-ignore lint/style/useAtIndex: TypeScript target doesn't support .at() method
-  const textSpan = spans[spans.length - 1]!;
-  if (!textSpan.textContent) {
-    return null;
-  }
-  return textSpan.textContent.replace(TRAILING_SLASH, "");
-};
-
-// Helper: get directory path from dir-item element
-const getDirPath = (dirItem: Element): string | null => {
-  const parts: string[] = [];
-  let current: Element | null = dirItem;
-
-  while (current) {
-    const dirName = getDirName(current);
-    if (dirName) {
-      parts.unshift(dirName);
-    }
-    const parentElement = current.parentElement;
-    current = parentElement ? parentElement.closest(".dir-item") : null;
-  }
-
-  return parts.length > 0 ? parts.join("/") : null;
+// Helper: get directory path from dir-group element
+const getDirPath = (dirGroup: Element): string | null => {
+  const path = dirGroup.getAttribute("data-dir-path");
+  return path || null;
 };
 
 // Helper: save collapsed state to localStorage
 const saveCollapsedState = () => {
   const collapsedDirs: string[] = [];
-  const dirItems = document.querySelectorAll(".dir-item.collapsed");
+  const dirGroups = document.querySelectorAll(".dir-group.collapsed");
 
-  for (const dirItem of Array.from(dirItems)) {
-    const path = getDirPath(dirItem);
+  for (const dirGroup of Array.from(dirGroups)) {
+    const path = getDirPath(dirGroup);
     if (path) {
       collapsedDirs.push(path);
     }
@@ -66,12 +33,12 @@ const restoreCollapsedState = () => {
     }
 
     const collapsedDirs: string[] = JSON.parse(saved);
-    const dirItems = document.querySelectorAll(".dir-item");
+    const dirGroups = document.querySelectorAll(".dir-group");
 
-    for (const dirItem of Array.from(dirItems)) {
-      const path = getDirPath(dirItem);
+    for (const dirGroup of Array.from(dirGroups)) {
+      const path = getDirPath(dirGroup);
       if (path && collapsedDirs.includes(path)) {
-        dirItem.classList.add("collapsed");
+        dirGroup.classList.add("collapsed");
       }
     }
   } catch (err) {
@@ -81,25 +48,17 @@ const restoreCollapsedState = () => {
 
 // Initialize collapsible directories
 const initCollapsibleDirectories = () => {
-  const dirLabels = document.querySelectorAll(".dir-label");
+  const dirHeaders = document.querySelectorAll(".dir-group-header");
 
-  for (const labelNode of Array.from(dirLabels)) {
-    const label = labelNode as HTMLElement;
-    // Add chevron icon to directory labels
-    const chevron = document.createElement("span");
-    chevron.className = "dir-chevron";
-    chevron.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-    label.insertBefore(chevron, label.firstChild);
-
-    // Make directory label clickable
-    label.style.cursor = "pointer";
+  for (const headerNode of Array.from(dirHeaders)) {
+    const header = headerNode as HTMLElement;
 
     // Toggle collapsed state on click
-    label.addEventListener("click", (e: Event) => {
+    header.addEventListener("click", (e: Event) => {
       e.preventDefault();
-      const dirItem = label.closest(".dir-item");
-      if (dirItem) {
-        dirItem.classList.toggle("collapsed");
+      const dirGroup = header.closest(".dir-group");
+      if (dirGroup) {
+        dirGroup.classList.toggle("collapsed");
         saveCollapsedState();
       }
     });
@@ -135,10 +94,8 @@ const initCollapsibleToc = () => {
   });
 };
 
-// Initialize on page load
-if (typeof window !== "undefined") {
-  window.addEventListener("DOMContentLoaded", () => {
-    initCollapsibleDirectories();
-    initCollapsibleToc();
-  });
-}
+// Export initialization function
+export const initCollapsible = (): void => {
+  initCollapsibleDirectories();
+  initCollapsibleToc();
+};

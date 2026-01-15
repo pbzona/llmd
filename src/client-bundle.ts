@@ -2,7 +2,7 @@
 // This file bundles all client-side code and can be served as /client.js
 
 import { initAdminToggle } from "./client/admin-toggle";
-import "./client/collapsible";
+import { initCollapsible } from "./client/collapsible";
 import "./client/copy-button";
 import "./client/file-watcher";
 import { initHighlights } from "./client/highlights";
@@ -19,6 +19,9 @@ import { initFileHighlightIndicators } from "./client/file-highlights";
 
 // Initialize admin toggle on all pages
 initAdminToggle();
+
+// Initialize collapsible sections
+initCollapsible();
 
 // Initialize file highlight indicators in sidebar
 initFileHighlightIndicators();
