@@ -70,6 +70,13 @@ const initializeDatabase = (db: any): void => {
     );
   `);
 
+  // Add size_bytes column to resources table (migration for existing databases)
+  try {
+    db.exec("ALTER TABLE resources ADD COLUMN size_bytes INTEGER;");
+  } catch {
+    // Column already exists - ignore error
+  }
+
   // Create events table
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
@@ -114,7 +121,7 @@ const scanAndCreateResources = async (
   const files = await scanMarkdownFiles(rootDir, 10);
 
   const insertStmt = db.prepare(
-    "INSERT OR IGNORE INTO resources (id, path, type, created_at) VALUES (?, ?, ?, ?)"
+    "INSERT OR IGNORE INTO resources (id, path, type, created_at, size_bytes) VALUES (?, ?, ?, ?, ?)"
   );
 
   const selectStmt = db.prepare("SELECT id FROM resources WHERE path = ?");
@@ -122,7 +129,7 @@ const scanAndCreateResources = async (
   // Insert root directory first
   const rootId = generateId();
   const rootTimestamp = Date.now();
-  insertStmt.run(rootId, rootDir, "dir", rootTimestamp);
+  insertStmt.run(rootId, rootDir, "dir", rootTimestamp, null);
 
   const existingRoot = selectStmt.get(rootDir) as { id: string } | undefined;
   if (existingRoot) {
@@ -135,7 +142,7 @@ const scanAndCreateResources = async (
   const insertDirectory = (dirPath: string, processedDirs: Set<string>): void => {
     const dirId = generateId();
     const timestamp = Date.now();
-    insertStmt.run(dirId, dirPath, "dir", timestamp);
+    insertStmt.run(dirId, dirPath, "dir", timestamp, null);
 
     const existing = selectStmt.get(dirPath) as { id: string } | undefined;
     if (existing) {
@@ -147,10 +154,10 @@ const scanAndCreateResources = async (
   };
 
   // Helper: insert file resource
-  const insertFile = (absolutePath: string): void => {
+  const insertFile = (absolutePath: string, sizeBytes: number): void => {
     const fileId = generateId();
     const timestamp = Date.now();
-    insertStmt.run(fileId, absolutePath, "file", timestamp);
+    insertStmt.run(fileId, absolutePath, "file", timestamp, sizeBytes);
 
     const existingFile = selectStmt.get(absolutePath) as { id: string } | undefined;
     if (existingFile) {
@@ -176,27 +183,29 @@ const scanAndCreateResources = async (
   };
 
   // Insert all files and their parent directories
-  const transaction = db.transaction((filesToInsert: Array<{ path: string; name: string }>) => {
-    const processedDirs = new Set<string>();
+  const transaction = db.transaction(
+    (filesToInsert: Array<{ path: string; name: string; sizeBytes: number }>) => {
+      const processedDirs = new Set<string>();
 
-    for (const file of filesToInsert) {
-      const absolutePath = join(rootDir, file.path);
+      for (const file of filesToInsert) {
+        const absolutePath = join(rootDir, file.path);
 
-      // Skip ignored paths
-      if (shouldIgnorePath(absolutePath, rootDir)) {
-        continue;
+        // Skip ignored paths
+        if (shouldIgnorePath(absolutePath, rootDir)) {
+          continue;
+        }
+
+        // Collect and insert parent directories
+        const dirsToCreate = collectParentDirs(absolutePath, processedDirs);
+        for (const dirPath of dirsToCreate) {
+          insertDirectory(dirPath, processedDirs);
+        }
+
+        // Insert file
+        insertFile(absolutePath, file.sizeBytes);
       }
-
-      // Collect and insert parent directories
-      const dirsToCreate = collectParentDirs(absolutePath, processedDirs);
-      for (const dirPath of dirsToCreate) {
-        insertDirectory(dirPath, processedDirs);
-      }
-
-      // Insert file
-      insertFile(absolutePath);
     }
-  });
+  );
 
   transaction(files);
 };
@@ -382,7 +391,7 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
 
     // Get most viewed documents
     const mostViewedStmt = db.prepare(`
-      SELECT r.path, COUNT(e.id) as views
+      SELECT r.path, r.size_bytes, COUNT(e.id) as views
       FROM resources r
       JOIN events e ON e.resource_id = r.id
       WHERE e.type = 'view' AND r.path LIKE ?
@@ -392,23 +401,27 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
     `);
     const mostViewed = mostViewedStmt.all(`${targetDir}%`) as Array<{
       path: string;
+      size_bytes: number | null;
       views: number;
     }>;
 
     // Get documents with zero views
     const zeroViewsStmt = db.prepare(`
-      SELECT r.path
+      SELECT r.path, r.size_bytes
       FROM resources r
-      WHERE r.type = 'file' 
+      WHERE r.type = 'file'
         AND r.path LIKE ?
         AND NOT EXISTS (
-          SELECT 1 FROM events e 
+          SELECT 1 FROM events e
           WHERE e.resource_id = r.id AND e.type = 'view'
         )
       ORDER BY r.path
       LIMIT 50
     `);
-    const zeroViews = zeroViewsStmt.all(`${targetDir}%`) as Array<{ path: string }>;
+    const zeroViews = zeroViewsStmt.all(`${targetDir}%`) as Array<{
+      path: string;
+      size_bytes: number | null;
+    }>;
 
     // Get total events
     const totalEventsStmt = db.prepare(
@@ -428,11 +441,13 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
         path: row.path,
         name: basename(row.path),
         views: row.views,
+        sizeBytes: row.size_bytes ?? 0,
       })),
       timeSeries: [], // Will be populated by getActivityTimeSeries
       zeroViews: zeroViews.map((row) => ({
         path: row.path,
         name: basename(row.path),
+        sizeBytes: row.size_bytes ?? 0,
       })),
       totalEvents,
       totalResources,

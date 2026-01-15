@@ -3,6 +3,14 @@
 import { baseLayout } from "./template";
 import type { AnalyticsData, Config, MarkdownFile } from "./types";
 
+// Helper: format file size in bytes to human-readable kB
+const formatFileSize = (bytes: number | null | undefined): string => {
+  if (bytes === null || bytes === undefined) {
+    return "—";
+  }
+  return `${(bytes / 1024).toFixed(1)} kB`;
+};
+
 // Helper: generate bar chart SVG
 const generateBarChart = (data: Array<{ date: string; count: number }>): string => {
   if (data.length === 0) {
@@ -119,7 +127,14 @@ const generateAnalyticsContent = (data: AnalyticsData, showAllHistory: boolean):
                     </div>
                   </div>
                 </div>
-                <span style="opacity: 0.6; font-size: 13px; font-weight: 600; white-space: nowrap; margin-left: 16px;">${doc.views} view${doc.views === 1 ? "" : "s"}</span>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; margin-left: 16px;">
+                  <span style="opacity: 0.6; font-size: 13px; font-weight: 600;">
+                    ${doc.views} view${doc.views === 1 ? "" : "s"}
+                  </span>
+                  <span style="opacity: 0.4; font-size: 11px; margin-top: 2px;">
+                    ${formatFileSize(doc.sizeBytes)}
+                  </span>
+                </div>
               </div>
             `
               )
@@ -149,17 +164,22 @@ const generateAnalyticsContent = (data: AnalyticsData, showAllHistory: boolean):
               .slice(0, 20)
               .map(
                 (doc, i) => `
-              <div style="padding: 12px 20px; border-bottom: ${i < Math.min(data.zeroViews.length, 20) - 1 ? "1px solid var(--border)" : "none"};">
-                <a href="/view/${doc.path.replace(`${data.currentDirectory}/`, "")}" style="color: var(--fg); text-decoration: none; font-size: 14px; opacity: 0.7; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
-                  ${doc.name}
-                </a>
-                <div style="opacity: 0.4; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
-                  ${(() => {
-                    const relativePath = doc.path.replace(`${data.currentDirectory}/`, "");
-                    const parentPath = relativePath.substring(0, relativePath.lastIndexOf("/"));
-                    return parentPath ? `/${parentPath}` : "/";
-                  })()}
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: ${i < Math.min(data.zeroViews.length, 20) - 1 ? "1px solid var(--border)" : "none"};">
+                <div style="min-width: 0; flex: 1;">
+                  <a href="/view/${doc.path.replace(`${data.currentDirectory}/`, "")}" style="color: var(--fg); text-decoration: none; font-size: 14px; opacity: 0.7; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
+                    ${doc.name}
+                  </a>
+                  <div style="opacity: 0.4; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
+                    ${(() => {
+                      const relativePath = doc.path.replace(`${data.currentDirectory}/`, "");
+                      const parentPath = relativePath.substring(0, relativePath.lastIndexOf("/"));
+                      return parentPath ? `/${parentPath}` : "/";
+                    })()}
+                  </div>
                 </div>
+                <span style="opacity: 0.4; font-size: 11px; white-space: nowrap; margin-left: 16px;">
+                  ${formatFileSize(doc.sizeBytes)}
+                </span>
               </div>
             `
               )

@@ -68,6 +68,7 @@ const scanDirectory = async (
         path: relativePath,
         name: entry,
         depth: calculateDepth(relativePath),
+        sizeBytes: stats.size,
       });
       continue;
     }

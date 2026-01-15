@@ -24,6 +24,8 @@ export type MarkdownFile = {
   name: string;
   // Directory depth (0 = root)
   depth: number;
+  // File size in bytes
+  sizeBytes: number;
 };
 
 export type ParsedArgs = {
@@ -97,9 +99,9 @@ export type Event = {
 
 export type AnalyticsData = {
   currentDirectory: string;
-  mostViewed: Array<{ path: string; name: string; views: number }>;
+  mostViewed: Array<{ path: string; name: string; views: number; sizeBytes: number }>;
   timeSeries: Array<{ date: string; count: number }>;
-  zeroViews: Array<{ path: string; name: string }>;
+  zeroViews: Array<{ path: string; name: string; sizeBytes: number }>;
   totalEvents: number;
   totalResources: number;
 };
