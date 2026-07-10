@@ -70,22 +70,6 @@ describe("parseArgs", () => {
     expect(viewResult.flags.analyticsSubcommand).toBe("view");
   });
 
-  test("parses highlights subcommands", () => {
-    const enableResult = parseArgs(["highlights", "enable"]);
-    expect(enableResult.flags.highlights).toBe(true);
-    expect(enableResult.flags.highlightsSubcommand).toBe("enable");
-
-    const disableResult = parseArgs(["highlights", "disable"]);
-    expect(disableResult.flags.highlights).toBe(true);
-    expect(enableResult.flags.highlightsSubcommand).toBe("enable");
-  });
-
-  test("defaults to enable when highlights called without subcommand", () => {
-    const result = parseArgs(["highlights"]);
-    expect(result.flags.highlights).toBe(true);
-    expect(result.flags.highlightsSubcommand).toBe("enable");
-  });
-
   test("parses db subcommands", () => {
     const checkResult = parseArgs(["db", "check"]);
     expect(checkResult.flags.db).toBe(true);

@@ -1,5 +1,10 @@
 // Shared TypeScript types for llmd
 
+// The SQLite driver differs by runtime (bun:sqlite in Bun, libsql in Node) and
+// the two have no shared published type, so the handle is intentionally untyped.
+// biome-ignore lint/suspicious/noExplicitAny: cross-runtime SQLite driver handle
+export type DatabaseHandle = any;
+
 export type Config = {
   // Directory to serve markdown files from
   directory: string;
@@ -39,8 +44,6 @@ export type ParsedArgs = {
     version?: boolean;
     analytics?: boolean;
     analyticsSubcommand?: "view" | "enable" | "disable";
-    highlights?: boolean;
-    highlightsSubcommand?: "enable" | "disable";
     db?: boolean;
     dbSubcommand?: "check" | "cleanup" | "clear";
     archive?: boolean;
@@ -58,8 +61,6 @@ export type CliResult =
   | { type: "config"; config: Config }
   | { type: "analytics-enable" }
   | { type: "analytics-disable" }
-  | { type: "highlights-enable" }
-  | { type: "highlights-disable" }
   | { type: "db-check" }
   | { type: "db-cleanup"; days: number }
   | { type: "db-clear" }
@@ -126,7 +127,6 @@ export type EventService = {
   getDatabaseStats: () => Promise<DatabaseStats>;
   cleanupOldEvents: (days: number) => Promise<{ deletedEvents: number; deletedResources: number }>;
   clearDatabase: () => Promise<void>;
-  // biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer for database access
-  getDatabase: () => any;
+  getDatabase: () => DatabaseHandle;
   close: () => void;
 };

@@ -31,6 +31,17 @@ describe("extractHeadings", () => {
     expect(headings.length).toBe(0);
   });
 
+  test("slugifies headings with inline formatting consistently", () => {
+    const headings = extractHeadings("# Hello **World**\n## Using `code`");
+    expect(headings[0]?.id).toBe("hello-world");
+    expect(headings[1]?.id).toBe("using-code");
+  });
+
+  test("disambiguates duplicate heading slugs", () => {
+    const headings = extractHeadings("# Setup\n## Setup\n### Setup");
+    expect(headings.map((h) => h.id)).toEqual(["setup", "setup-1", "setup-2"]);
+  });
+
   test("ignores hash comments inside code blocks", () => {
     const markdown = `# Real Heading
 
@@ -97,6 +108,21 @@ describe("renderMarkdown", () => {
     expect(html).toContain("https://google.com");
   });
 
+  test("does not rewrite absolute URLs that end in .md", () => {
+    const markdown = "[spec](https://example.com/spec.md)";
+    const html = renderMarkdown(markdown);
+
+    expect(html).toContain("https://example.com/spec.md");
+    expect(html).not.toContain("/view/https");
+  });
+
+  test("preserves #fragment on rewritten links", () => {
+    const markdown = "[Setup](./guide.md#setup)";
+    const html = renderMarkdown(markdown);
+
+    expect(html).toContain("/view/guide.md#setup");
+  });
+
   test("renders code blocks", () => {
     const markdown = "```js\nconst x = 1;\n```";
     const html = renderMarkdown(markdown);
@@ -154,6 +180,34 @@ describe("addHeadingIds", () => {
 
     expect(result).toContain('id="hello-world"');
     expect(result).toContain('id="api"');
+  });
+
+  test("uses provided ids in document order (matches TOC)", () => {
+    const html = "<h1>Hello <strong>World</strong></h1><h2>API</h2>";
+    const result = addHeadingIds(html, ["hello-world", "api"]);
+
+    expect(result).toContain('id="hello-world"');
+    expect(result).toContain('id="api"');
+  });
+});
+
+describe("processMarkdown heading anchors", () => {
+  test("TOC anchors match heading element ids for formatted headings", async () => {
+    const markdown = "# Hello **World**\n\ntext\n\n## Using `code`\n\nmore";
+    const { html, toc } = await processMarkdown(markdown, "github-light");
+
+    expect(toc).toContain('href="#hello-world"');
+    expect(html).toContain('id="hello-world"');
+    expect(toc).toContain('href="#using-code"');
+    expect(html).toContain('id="using-code"');
+  });
+
+  test("preserves escaped entities inside code blocks", async () => {
+    const markdown = '```js\nconst s = "&quot;";\n```';
+    const { html } = await processMarkdown(markdown, "github-light");
+
+    // Should not double-decode: the literal text &quot; must survive rendering.
+    expect(html).not.toContain('const s = """');
   });
 });
 

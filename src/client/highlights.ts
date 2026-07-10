@@ -17,7 +17,19 @@ type Highlight = {
 let highlights: Highlight[] = [];
 let popup: HTMLElement | null = null;
 let currentSelection: { text: string; range: Range } | null = null;
-const openNotesPopups: Map<string, HTMLElement> = new Map();
+type OpenPopup = { el: HTMLElement; onOutsideClick: (e: MouseEvent) => void };
+const openNotesPopups: Map<string, OpenPopup> = new Map();
+
+// Close an open notes popup and remove its document-level click listener.
+const closeNotesPopup = (highlightId: string): void => {
+  const entry = openNotesPopups.get(highlightId);
+  if (!entry) {
+    return;
+  }
+  entry.el.remove();
+  document.removeEventListener("click", entry.onOutsideClick);
+  openNotesPopups.delete(highlightId);
+};
 
 // Initialize highlights on page load
 export const initHighlights = (): void => {
@@ -203,11 +215,9 @@ const hidePopup = (): void => {
 
 // Show notes popup when clicking on an existing highlight
 const showNotesPopup = (highlight: Highlight, e: MouseEvent): void => {
-  // If popup already exists for this highlight, close it instead
-  const existingPopup = openNotesPopups.get(highlight.id);
-  if (existingPopup) {
-    existingPopup.remove();
-    openNotesPopups.delete(highlight.id);
+  // If popup already exists for this highlight, close it instead (toggle)
+  if (openNotesPopups.has(highlight.id)) {
+    closeNotesPopup(highlight.id);
     return;
   }
 
@@ -241,8 +251,7 @@ const showNotesPopup = (highlight: Highlight, e: MouseEvent): void => {
     "background: none; border: none; color: var(--fg); cursor: pointer; padding: 0; font-size: 18px; line-height: 1; opacity: 0.7;";
   closeBtn.addEventListener("click", (clickEvent) => {
     clickEvent.stopPropagation();
-    notesPopup.remove();
-    openNotesPopups.delete(highlight.id);
+    closeNotesPopup(highlight.id);
   });
 
   header.appendChild(title);
@@ -266,19 +275,18 @@ const showNotesPopup = (highlight: Highlight, e: MouseEvent): void => {
 
   document.body.appendChild(notesPopup);
 
-  // Track this popup
-  openNotesPopups.set(highlight.id, notesPopup);
-
-  // Close when clicking outside
-  const closeOnClickOutside = (clickEvent: MouseEvent): void => {
+  // Close when clicking outside (listener is removed in closeNotesPopup)
+  const onOutsideClick = (clickEvent: MouseEvent): void => {
     if (!notesPopup.contains(clickEvent.target as Node)) {
-      notesPopup.remove();
-      openNotesPopups.delete(highlight.id);
-      document.removeEventListener("click", closeOnClickOutside);
+      closeNotesPopup(highlight.id);
     }
   };
+
+  // Track this popup along with its listener so every close path cleans up.
+  openNotesPopups.set(highlight.id, { el: notesPopup, onOutsideClick });
+
   setTimeout(() => {
-    document.addEventListener("click", closeOnClickOutside);
+    document.addEventListener("click", onOutsideClick);
   }, 0);
 };
 

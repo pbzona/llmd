@@ -206,6 +206,51 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
   },
 };
 
+// Required properties for a valid custom theme
+const REQUIRED_COLOR_PROPS = [
+  "bg",
+  "fg",
+  "border",
+  "hover",
+  "accent",
+  "codeBg",
+  "sidebarBg",
+  "folderIcon",
+  "fileIcon",
+  "highlightBg",
+  "highlightStaleBg",
+];
+const REQUIRED_FONT_PROPS = ["body", "heading", "code"];
+
+// Pure function: validate a single custom theme, logging why it was skipped.
+const validateTheme = (name: string, theme: unknown): Theme | null => {
+  if (typeof theme !== "object" || theme === null) {
+    console.warn(`[llmd] Skipping invalid theme: ${name}`);
+    return null;
+  }
+
+  const t = theme as Record<string, unknown>;
+  const colors = t.colors as Record<string, unknown> | undefined;
+  const fonts = t.fonts as Record<string, unknown> | undefined;
+
+  if (!colors || REQUIRED_COLOR_PROPS.some((prop) => typeof colors[prop] !== "string")) {
+    console.warn(`[llmd] Skipping theme with missing/incomplete colors: ${name}`);
+    return null;
+  }
+
+  if (!fonts || REQUIRED_FONT_PROPS.some((prop) => typeof fonts[prop] !== "string")) {
+    console.warn(`[llmd] Skipping theme with missing/incomplete fonts: ${name}`);
+    return null;
+  }
+
+  if (fonts.googleFontsUrl !== undefined && typeof fonts.googleFontsUrl !== "string") {
+    console.warn(`[llmd] Skipping theme with invalid googleFontsUrl: ${name}`);
+    return null;
+  }
+
+  return theme as Theme;
+};
+
 // Load custom themes from unified config file
 const loadCustomThemes = (): Record<string, Theme> => {
   // Check XDG_CONFIG_HOME first, fallback to ~/.config
@@ -218,77 +263,21 @@ const loadCustomThemes = (): Record<string, Theme> => {
   }
 
   try {
-    const content = readFileSync(themesPath, "utf-8");
-    const config = JSON.parse(content);
-
+    const config = JSON.parse(readFileSync(themesPath, "utf-8"));
     // Support unified themes in themes.json
     const customThemes = config.themes || config;
 
-    // Validate that it's an object with theme objects
     if (typeof customThemes !== "object" || customThemes === null) {
       console.warn(`[llmd] Invalid themes.json format at ${themesPath}`);
       return {};
     }
 
-    // Validate each theme has required properties
     const validatedThemes: Record<string, Theme> = {};
     for (const [name, theme] of Object.entries(customThemes)) {
-      if (typeof theme !== "object" || theme === null) {
-        console.warn(`[llmd] Skipping invalid theme: ${name}`);
-        continue;
+      const validated = validateTheme(name, theme);
+      if (validated) {
+        validatedThemes[name] = validated;
       }
-
-      const t = theme as Record<string, unknown>;
-
-      // Check for colors object
-      if (typeof t.colors !== "object" || t.colors === null) {
-        console.warn(`[llmd] Skipping theme with missing colors: ${name}`);
-        continue;
-      }
-
-      const colors = t.colors as Record<string, unknown>;
-      const requiredColorProps = [
-        "bg",
-        "fg",
-        "border",
-        "hover",
-        "accent",
-        "codeBg",
-        "sidebarBg",
-        "folderIcon",
-        "fileIcon",
-        "highlightBg",
-        "highlightStaleBg",
-      ];
-
-      const hasAllColors = requiredColorProps.every((prop) => typeof colors[prop] === "string");
-      if (!hasAllColors) {
-        console.warn(`[llmd] Skipping theme with incomplete colors: ${name}`);
-        continue;
-      }
-
-      // Check for fonts object
-      if (typeof t.fonts !== "object" || t.fonts === null) {
-        console.warn(`[llmd] Skipping theme with missing fonts: ${name}`);
-        continue;
-      }
-
-      const fonts = t.fonts as Record<string, unknown>;
-      const requiredFontProps = ["body", "heading", "code"];
-
-      const hasAllFonts = requiredFontProps.every((prop) => typeof fonts[prop] === "string");
-      if (!hasAllFonts) {
-        console.warn(`[llmd] Skipping theme with incomplete fonts: ${name}`);
-        continue;
-      }
-
-      // Validate googleFontsUrl if present
-      if (fonts.googleFontsUrl !== undefined && typeof fonts.googleFontsUrl !== "string") {
-        console.warn(`[llmd] Skipping theme with invalid googleFontsUrl: ${name}`);
-        continue;
-      }
-
-      validatedThemes[name] = theme as Theme;
     }
 
     return validatedThemes;

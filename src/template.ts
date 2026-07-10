@@ -1,7 +1,65 @@
 // HTML template generation
 
+import { escapeAttr, escapeHtml, scriptValue } from "./escape";
 import { getTheme } from "./theme-config";
 import type { Config, MarkdownFile } from "./types";
+
+// Pure function: percent-encode a relative path for use in a /view/ URL,
+// preserving "/" separators.
+const encodePath = (path: string): string => path.split("/").map(encodeURIComponent).join("/");
+
+// Light/dark dependent CSS values, resolved once per theme instead of via
+// inline ternaries throughout the stylesheet.
+type UiPalette = {
+  c333: string;
+  c444: string;
+  c555: string;
+  scrollbar333: string;
+  scrollbar444: string;
+  activeText: string;
+  adminHover: string;
+  adminListHover: string;
+  dim: string;
+  copyText: string;
+  muted: string;
+  tocHead: string;
+  contrast: string;
+  flashEnd: string;
+};
+
+const DARK_PALETTE: UiPalette = {
+  c333: "#333",
+  c444: "#444",
+  c555: "#555",
+  scrollbar333: "#333 transparent",
+  scrollbar444: "#444 transparent",
+  activeText: "rgba(0, 0, 0, 0.7)",
+  adminHover: "rgba(255, 255, 255, 0.04)",
+  adminListHover: "rgba(255, 255, 255, 0.08)",
+  dim: "#a0a0a0",
+  copyText: "#000000",
+  muted: "#c0c0c0",
+  tocHead: "#b3b3b3",
+  contrast: "#000",
+  flashEnd: "rgba(255, 220, 0, 0.25)",
+};
+
+const LIGHT_PALETTE: UiPalette = {
+  c333: "#ddd",
+  c444: "#ccc",
+  c555: "#bbb",
+  scrollbar333: "#ddd transparent",
+  scrollbar444: "#ccc transparent",
+  activeText: "rgba(255, 255, 255, 0.7)",
+  adminHover: "rgba(0, 0, 0, 0.04)",
+  adminListHover: "rgba(0, 0, 0, 0.08)",
+  dim: "#666",
+  copyText: "#ffffff",
+  muted: "#666",
+  tocHead: "#666",
+  contrast: "#fff",
+  flashEnd: "rgba(255, 235, 59, 0.35)",
+};
 
 // Pure function: generate embedded CSS
 const getStyles = (themeName: string): string => {
@@ -10,6 +68,7 @@ const getStyles = (themeName: string): string => {
   const fontFamilies = theme.fonts;
   // Determine if theme is dark based on background brightness
   const isDark = Number.parseInt(colors.bg.replace("#", ""), 16) < 0x80_80_80;
+  const p = isDark ? DARK_PALETTE : LIGHT_PALETTE;
 
   return `
     
@@ -59,17 +118,17 @@ const getStyles = (themeName: string): string => {
     }
     
     .sidebar::-webkit-scrollbar-thumb {
-      background: ${isDark ? "#333" : "#ddd"};
+      background: ${p.c333};
       border-radius: 4px;
     }
     
     .sidebar::-webkit-scrollbar-thumb:hover {
-      background: ${isDark ? "#444" : "#ccc"};
+      background: ${p.c444};
     }
     
     .sidebar {
       scrollbar-width: thin;
-      scrollbar-color: ${isDark ? "#333 transparent" : "#ddd transparent"};
+      scrollbar-color: ${p.scrollbar333};
     }
     
     .sidebar-resize-handle {
@@ -217,13 +276,13 @@ const getStyles = (themeName: string): string => {
 
     .sidebar-nav a.active {
       background: var(--accent);
-      color: ${isDark ? "rgba(0, 0, 0, 0.7)" : "rgba(255, 255, 255, 0.7)"};
+      color: ${p.activeText};
       font-weight: 600;
     }
     
     /* Admin Section */
     .admin-header:hover {
-      background: ${isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)"};
+      background: ${p.adminHover};
     }
     
     .admin-section.collapsed .admin-list {
@@ -238,7 +297,7 @@ const getStyles = (themeName: string): string => {
     }
     
     .admin-list a:hover {
-      background: ${isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)"};
+      background: ${p.adminListHover};
     }
     
     .main {
@@ -263,7 +322,7 @@ const getStyles = (themeName: string): string => {
     .file-path {
       font-family: ${fontFamilies.code};
       font-size: 0.8125rem;
-      color: ${isDark ? "#a0a0a0" : "#666"};
+      color: ${p.dim};
       opacity: 0.85;
     }
 
@@ -346,7 +405,7 @@ const getStyles = (themeName: string): string => {
       padding: 4px 12px;
       font-size: 12px;
       background: var(--accent);
-      color: ${isDark ? "#000000" : "#ffffff"};
+      color: ${p.copyText};
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -386,7 +445,7 @@ const getStyles = (themeName: string): string => {
       border-left: 4px solid var(--accent);
       padding-left: 1.25rem;
       margin: 1.5rem 0;
-      color: ${isDark ? "#c0c0c0" : "#666"};
+      color: ${p.muted};
       font-style: italic;
       max-width: 65ch;
     }
@@ -446,17 +505,17 @@ const getStyles = (themeName: string): string => {
     }
     
     .toc ul::-webkit-scrollbar-thumb {
-      background: ${isDark ? "#444" : "#ccc"};
+      background: ${p.c444};
       border-radius: 3px;
     }
     
     .toc ul::-webkit-scrollbar-thumb:hover {
-      background: ${isDark ? "#555" : "#bbb"};
+      background: ${p.c555};
     }
     
     .toc ul {
       scrollbar-width: thin;
-      scrollbar-color: ${isDark ? "#444 transparent" : "#ccc transparent"};
+      scrollbar-color: ${p.scrollbar444};
     }
     
     .toc.collapsed ul {
@@ -471,7 +530,7 @@ const getStyles = (themeName: string): string => {
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-weight: 700;
-      color: ${isDark ? "#b3b3b3" : "#666"};
+      color: ${p.tocHead};
       display: flex;
       align-items: center;
       gap: 6px;
@@ -536,13 +595,13 @@ const getStyles = (themeName: string): string => {
     
     .error p {
       font-size: 18px;
-      color: ${isDark ? "#c0c0c0" : "#666"};
+      color: ${p.muted};
     }
     
     /* Highlights */
     .llmd-highlight {
       background: color-mix(in srgb, var(--highlight-bg) 100%, transparent);
-      border-bottom: 2px solid color-mix(in srgb, var(--highlight-bg) 60%, ${isDark ? "#000" : "#fff"});
+      border-bottom: 2px solid color-mix(in srgb, var(--highlight-bg) 60%, ${p.contrast});
       cursor: pointer;
       transition: background 0.2s;
     }
@@ -553,7 +612,7 @@ const getStyles = (themeName: string): string => {
     
     .llmd-highlight-stale {
       background: color-mix(in srgb, var(--highlight-stale-bg) 20%, transparent);
-      border-bottom: 2px solid color-mix(in srgb, var(--highlight-stale-bg) 60%, ${isDark ? "#000" : "#fff"});
+      border-bottom: 2px solid color-mix(in srgb, var(--highlight-stale-bg) 60%, ${p.contrast});
       border-style: dashed;
     }
     
@@ -593,7 +652,7 @@ const getStyles = (themeName: string): string => {
     /* Highlight flash animation for scroll-to */
     @keyframes highlight-flash {
       0% { background: var(--accent); }
-      100% { background: ${isDark ? "rgba(255, 220, 0, 0.25)" : "rgba(255, 235, 59, 0.35)"}; }
+      100% { background: ${p.flashEnd}; }
     }
     
     .highlight-flash {
@@ -652,8 +711,12 @@ const groupFilesByDirectory = (files: MarkdownFile[]): DirectoryGroup[] => {
 
   // Sort groups: root first, then alphabetically by path
   groups.sort((a, b) => {
-    if (a.directoryPath === "") return -1;
-    if (b.directoryPath === "") return 1;
+    if (a.directoryPath === "") {
+      return -1;
+    }
+    if (b.directoryPath === "") {
+      return 1;
+    }
     return a.directoryPath.localeCompare(b.directoryPath);
   });
 
@@ -671,44 +734,40 @@ const HIGHLIGHTS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" heig
 
 const CHEVRON_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
-// Pure function: render flat sidebar with directory groups
-const renderFlatSidebar = (groups: DirectoryGroup[], currentPath?: string): string => {
-  let html = "";
+// Pure function: render a single file navigation link
+const renderFileLink = (
+  file: MarkdownFile,
+  currentPath: string | undefined,
+  indent: string
+): string => {
+  const activeClass = currentPath === file.path ? "active" : "";
+  return `${indent}<a href="/view/${encodePath(file.path)}" class="nav-link-file ${activeClass}" data-file-path="${escapeAttr(file.path)}">${FILE_ICON}<span>${escapeHtml(file.name)}</span></a>\n`;
+};
 
-  for (const group of groups) {
-    if (group.directoryPath === "") {
-      // Root files - render directly at top level without grouping
-      for (const file of group.files) {
-        const isActive = currentPath === file.path;
-        const activeClass = isActive ? "active" : "";
-        html += `<a href="/view/${file.path}" class="nav-link-file ${activeClass}" data-file-path="${file.path}">${FILE_ICON}<span>${file.name}</span></a>\n`;
-      }
-    } else {
-      // Directory group with collapsible header
-      html += `<div class="dir-group" data-dir-path="${group.directoryPath}">
+// Pure function: render a collapsible directory group with its files
+const renderDirectoryGroup = (group: DirectoryGroup, currentPath?: string): string => {
+  const files = group.files.map((file) => renderFileLink(file, currentPath, "    ")).join("");
+  return `<div class="dir-group" data-dir-path="${escapeAttr(group.directoryPath)}">
   <div class="dir-group-header">
     <span class="dir-chevron">${CHEVRON_ICON}</span>
     ${FOLDER_ICON}
-    <span>${group.directoryName}</span>
+    <span>${escapeHtml(group.directoryName)}</span>
   </div>
   <div class="dir-group-content">
-`;
-
-      // Render files in this directory
-      for (const file of group.files) {
-        const isActive = currentPath === file.path;
-        const activeClass = isActive ? "active" : "";
-        html += `    <a href="/view/${file.path}" class="nav-link-file ${activeClass}" data-file-path="${file.path}">${FILE_ICON}<span>${file.name}</span></a>\n`;
-      }
-
-      html += `  </div>
+${files}  </div>
 </div>
 `;
-    }
-  }
-
-  return html;
 };
+
+// Pure function: render flat sidebar with directory groups
+const renderFlatSidebar = (groups: DirectoryGroup[], currentPath?: string): string =>
+  groups
+    .map((group) =>
+      group.directoryPath === ""
+        ? group.files.map((file) => renderFileLink(file, currentPath, "")).join("")
+        : renderDirectoryGroup(group, currentPath)
+    )
+    .join("");
 
 // Pure function: generate admin section (collapsible)
 const generateAdminSection = (): string => `
@@ -789,10 +848,7 @@ export const baseLayout = (options: LayoutOptions): string => {
   const { content, title, theme, files, currentPath, clientScript, watchEnabled, watchFile } =
     options;
 
-  const watchScriptTag =
-    watchEnabled && watchFile
-      ? `<script>window.addEventListener('load', () => window.connectFileWatcher?.('${watchFile}'));</script>`
-      : "";
+  const watchAttr = watchEnabled && watchFile ? ` data-watch-file="${escapeAttr(watchFile)}"` : "";
 
   const fontImport = generateFontImport(theme);
 
@@ -801,12 +857,12 @@ export const baseLayout = (options: LayoutOptions): string => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} - llmd</title>
+  <title>${escapeHtml(title)} - llmd</title>
   <link rel="icon" type="image/svg+xml" href="/_favicon">
   ${fontImport}
   <style>${getStyles(theme)}</style>
 </head>
-<body>
+<body${watchAttr}>
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>
@@ -835,7 +891,6 @@ export const baseLayout = (options: LayoutOptions): string => {
     </div>
   </main>
   ${clientScript || ""}
-  ${watchScriptTag}
 </body>
 </html>`;
 };
@@ -863,12 +918,12 @@ export const generateIndexPage = (
            ${rootFiles
              .map(
                (f) => `<li style="margin: 6px 0;">
-             <a href="/view/${f.path}" style="color: ${isDark ? "#a0a0a0" : "#666"}; text-decoration: none; display: flex; align-items: center; gap: 6px; transition: color 0.15s;">
+             <a href="/view/${encodePath(f.path)}" style="color: ${isDark ? "#a0a0a0" : "#666"}; text-decoration: none; display: flex; align-items: center; gap: 6px; transition: color 0.15s;">
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6;">
                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                  <polyline points="14 2 14 8 20 8"></polyline>
                </svg>
-               ${f.name}
+               ${escapeHtml(f.name)}
              </a>
            </li>`
              )
@@ -898,7 +953,7 @@ export const generateIndexPage = (
        </div>`;
 
   // Add event tracking script
-  const trackingScript = `<script>window.addEventListener('load', () => window.trackDirectoryOpen?.('${config.directory}'));</script>`;
+  const trackingScript = `<script>window.addEventListener('load', () => window.trackDirectoryOpen?.(${scriptValue(config.directory)}));</script>`;
 
   return baseLayout({
     content,
@@ -924,7 +979,7 @@ type MarkdownPageOptions = {
 export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
   const { html, toc, fileName, files, config, currentPath, clientScript } = options;
   const content = `<div class="file-metadata">
-    <span class="file-path">${currentPath}</span>
+    <span class="file-path">${escapeHtml(currentPath)}</span>
   </div>
   <div class="content">
     ${toc}
@@ -933,7 +988,7 @@ export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
 
   // Add event tracking script (send absolute path)
   const absolutePath = `${config.directory}/${currentPath}`;
-  const trackingScript = `<script>window.addEventListener('load', () => window.trackFileView?.('${absolutePath}'));</script>`;
+  const trackingScript = `<script>window.addEventListener('load', () => window.trackFileView?.(${scriptValue(absolutePath)}));</script>`;
 
   return baseLayout({
     content,
@@ -961,7 +1016,7 @@ export const generateErrorPage = (options: ErrorPageOptions): string => {
   const { errorCode, message, files, config, clientScript } = options;
   const content = `<div class="error">
     <h1>${errorCode}</h1>
-    <p>${message}</p>
+    <p>${escapeHtml(message)}</p>
   </div>`;
 
   return baseLayout({

@@ -12,12 +12,41 @@ marked.setOptions({
 // Regex for heading detection (moved to top level for performance)
 const HEADING_REGEX = /^(#{1,6})\s+(.+)$/;
 
+// Slug construction regexes (top-level for performance)
+const MD_LINK_REGEX = /\[([^\]]+)\]\([^)]*\)/g;
+const HTML_TAG_REGEX = /<[^>]+>/g;
+const MD_MARKER_REGEX = /[`*_~]/g;
+const NON_SLUG_REGEX = /[^\w\s-]/g;
+const WHITESPACE_REGEX = /\s+/g;
+
+// Pure function: slugify heading text into a stable anchor id.
+// Strips markdown links/emphasis and any rendered HTML tags so that the id
+// computed from markdown source (TOC) matches the id computed from rendered
+// HTML (heading element).
+const slugifyHeading = (text: string): string =>
+  text
+    .replace(MD_LINK_REGEX, "$1")
+    .replace(HTML_TAG_REGEX, "")
+    .replace(MD_MARKER_REGEX, "")
+    .toLowerCase()
+    .replace(NON_SLUG_REGEX, "")
+    .trim()
+    .replace(WHITESPACE_REGEX, "-");
+
+// Pure function: disambiguate duplicate slugs in document order (foo, foo-1, ...)
+const makeUniqueSlug = (slug: string, seen: Map<string, number>): string => {
+  const count = seen.get(slug) ?? 0;
+  seen.set(slug, count + 1);
+  return count === 0 ? slug : `${slug}-${count}`;
+};
+
 // Pure function: extract headings from markdown for TOC
 export const extractHeadings = (
   markdown: string
 ): Array<{ level: number; text: string; id: string }> => {
   const headings: Array<{ level: number; text: string; id: string }> = [];
   const lines = markdown.split("\n");
+  const seenSlugs = new Map<string, number>();
   let inCodeBlock = false;
 
   for (const line of lines) {
@@ -36,11 +65,7 @@ export const extractHeadings = (
     if (match) {
       const level = match[1]!.length;
       const text = match[2]!.trim();
-      const id = text
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, "")
-        .replace(/\s+/g, "-");
-
+      const id = makeUniqueSlug(slugifyHeading(text), seenSlugs);
       headings.push({ level, text, id });
     }
   }
@@ -48,14 +73,17 @@ export const extractHeadings = (
   return headings;
 };
 
-// Pure function: rewrite relative markdown links to /view/ URLs
-const rewriteMarkdownLinks = (markdown: string): string => {
-  // Match markdown links: [text](./path.md) or [text](path.md)
-  return markdown.replace(
-    /\[([^\]]+)\]\((?:\.\/)?([^)]+\.md)\)/g,
-    (_, text, path) => `[${text}](/view/${path})`
+// Markdown link rewriting regexes (top-level for performance)
+// Matches [text](path.md) or [text](./path.md) with an optional #fragment.
+const MARKDOWN_MD_LINK_REGEX = /\[([^\]]+)\]\((?:\.\/)?([^)\s#]+\.md)(#[^)]*)?\)/g;
+const ABSOLUTE_URL_REGEX = /^(?:[a-z][a-z0-9+.-]*:)?\/\//i;
+
+// Pure function: rewrite relative markdown links to /view/ URLs.
+// Leaves absolute URLs untouched and preserves #fragments.
+const rewriteMarkdownLinks = (markdown: string): string =>
+  markdown.replace(MARKDOWN_MD_LINK_REGEX, (match, text, path, fragment = "") =>
+    ABSOLUTE_URL_REGEX.test(path) ? match : `[${text}](/view/${path}${fragment})`
   );
-};
 
 // Pure function: render markdown to HTML
 export const renderMarkdown = (markdown: string): string => {
@@ -85,44 +113,54 @@ export const generateTOC = (
   return `<nav class="toc collapsed"><h3>Contents</h3><ul>${items}</ul></nav>`;
 };
 
-// Pure function: add IDs to headings in HTML
-export const addHeadingIds = (html: string): string =>
-  html.replace(/<h([1-6])>(.+?)<\/h\1>/g, (_, level, text) => {
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-");
+// Heading element regex (marked emits <hN>...</hN> with no attributes)
+const HEADING_ELEMENT_REGEX = /<h([1-6])>(.+?)<\/h\1>/g;
+
+// Pure function: add IDs to headings in HTML.
+// When `ids` is supplied (from extractHeadings) it is consumed in document
+// order so the anchors match the TOC exactly; otherwise ids are derived here.
+export const addHeadingIds = (html: string, ids?: string[]): string => {
+  const seenSlugs = new Map<string, number>();
+  let index = 0;
+
+  return html.replace(HEADING_ELEMENT_REGEX, (_match, level, text) => {
+    const id = ids
+      ? (ids[index] ?? slugifyHeading(text))
+      : makeUniqueSlug(slugifyHeading(text), seenSlugs);
+    index += 1;
     return `<h${level} id="${id}">${text}</h${level}>`;
   });
+};
+
+// Code block regex for syntax highlighting
+const CODE_BLOCK_REGEX = /<pre><code(?:\s+class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g;
+
+// Pure function: decode HTML entities produced by marked inside code blocks.
+// `&amp;` is decoded last so escaped entities (e.g. `&amp;quot;`) survive.
+const decodeCodeEntities = (code: string): string =>
+  code
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 
 // Function: apply syntax highlighting to code blocks in HTML
-const applySyntaxHighlighting = async (html: string, theme: "light" | "dark"): Promise<string> => {
-  // Find all code blocks: <pre><code class="language-X">...</code></pre>
-  const codeBlockRegex = /<pre><code(?:\s+class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g;
-
-  const matches = Array.from(html.matchAll(codeBlockRegex));
+const applySyntaxHighlighting = async (html: string, codeTheme?: string): Promise<string> => {
+  const matches = Array.from(html.matchAll(CODE_BLOCK_REGEX));
   let result = html;
 
-  // Process each code block
   for (const match of matches) {
     const [fullMatch, lang, code] = match;
     if (!(fullMatch && code)) {
       continue;
     }
 
-    // Decode HTML entities in code
-    const decodedCode = code
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+    const decodedCode = decodeCodeEntities(code);
+    const highlighted = await highlightCode(decodedCode, lang, codeTheme);
 
-    // Highlight the code
-    const highlighted = await highlightCode(decodedCode, lang, theme);
-
-    // Replace in HTML
-    result = result.replace(fullMatch, highlighted);
+    // Use a replacer function so `$&`/`$'` in highlighted output are literal.
+    result = result.replace(fullMatch, () => highlighted);
   }
 
   return result;
@@ -135,7 +173,10 @@ export const processMarkdown = async (
 ): Promise<{ html: string; toc: string }> => {
   const headings = extractHeadings(markdown);
   const rawHtml = renderMarkdown(markdown);
-  const htmlWithIds = addHeadingIds(rawHtml);
+  const htmlWithIds = addHeadingIds(
+    rawHtml,
+    headings.map((h) => h.id)
+  );
   const htmlWithHighlighting = await applySyntaxHighlighting(htmlWithIds, codeTheme);
   const toc = generateTOC(headings);
 

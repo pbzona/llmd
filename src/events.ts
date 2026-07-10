@@ -4,14 +4,20 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import type { Config, EventService, EventType, ResourceType } from "./types";
+import type {
+  AnalyticsData,
+  Config,
+  DatabaseHandle,
+  EventService,
+  EventType,
+  ResourceType,
+} from "./types";
 
 // Directories to ignore (as subdirectories, not if they're the root)
 const IGNORED_DIRECTORIES = ["node_modules", ".git", "dist", "build", "test-fixtures"];
 
 // Dynamic database creation for Bun vs Node.js compatibility using libsql
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-const createDatabase = (path: string): any => {
+const createDatabase = (path: string): DatabaseHandle => {
   // biome-ignore lint/suspicious/noExplicitAny: Runtime detection
   if (typeof Bun !== "undefined" && (globalThis as any).Bun) {
     const { Database } = require("bun:sqlite");
@@ -55,8 +61,7 @@ const shouldIgnorePath = (absolutePath: string, rootDir: string): boolean => {
 const generateId = (): string => randomUUID();
 
 // Side effect: initialize database schema
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-const initializeDatabase = (db: any): void => {
+const initializeDatabase = (db: DatabaseHandle): void => {
   // Enable foreign keys (use exec for Bun compatibility)
   db.exec("PRAGMA foreign_keys = ON");
 
@@ -109,16 +114,27 @@ const initializeDatabase = (db: any): void => {
   initializeHighlightsSchema(db);
 };
 
+// Side effect: open the analytics database at the given path (or the default
+// location), ensuring the schema exists. Centralizes the create + initialize
+// dance used by the CLI helpers below and by external consumers (e.g. export).
+export const openDatabase = (dbPath?: string): { db: DatabaseHandle; path: string } => {
+  const path = dbPath ?? resolveDatabasePath();
+  const db = createDatabase(path);
+  initializeDatabase(db);
+  return { db, path };
+};
+
 // Side effect: recursively scan directory and create resources
 const scanAndCreateResources = async (
-  db: any,
+  db: DatabaseHandle,
   rootDir: string,
+  maxDepth: number,
   pathMap: Map<string, string>
 ): Promise<void> => {
   const { scanMarkdownFiles } = await import("./scanner");
 
-  // Scan directory tree
-  const files = await scanMarkdownFiles(rootDir, 10);
+  // Scan directory tree (same depth as the sidebar so analytics stay in sync)
+  const files = await scanMarkdownFiles(rootDir, maxDepth);
 
   const insertStmt = db.prepare(
     "INSERT OR IGNORE INTO resources (id, path, type, created_at, size_bytes) VALUES (?, ?, ?, ?, ?)"
@@ -231,8 +247,7 @@ const checkDatabaseSize = (dbPath: string): void => {
 };
 
 // Side effect: get config value from database
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-const getConfigValue = (db: any, key: string): string | null => {
+const getConfigValue = (db: DatabaseHandle, key: string): string | null => {
   try {
     const stmt = db.prepare("SELECT value FROM config WHERE key = ?");
     const row = stmt.get(key) as { value: string } | undefined;
@@ -243,16 +258,14 @@ const getConfigValue = (db: any, key: string): string | null => {
 };
 
 // Side effect: set config value in database
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-const setConfigValue = (db: any, key: string, value: string): void => {
+const setConfigValue = (db: DatabaseHandle, key: string, value: string): void => {
   const stmt = db.prepare("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)");
   stmt.run(key, value);
 };
 
 // Side effect: check if analytics is enabled
 // Priority: 1) Environment variable, 2) Database config, 3) Default (enabled)
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-const isAnalyticsEnabled = (db: any): boolean => {
+const isAnalyticsEnabled = (db: DatabaseHandle): boolean => {
   // Environment variable takes precedence
   if (process.env.LLMD_ENABLE_EVENTS === "false") {
     return false;
@@ -301,19 +314,23 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
   }> = [];
   let isScanning = true;
 
+  // Flush any events queued during scanning (also runs on scan failure so
+  // events are never silently dropped - recordEventSync creates resources
+  // on demand when the scan did not).
+  const flushQueue = (): void => {
+    isScanning = false;
+    for (const event of eventQueue) {
+      recordEventSync(event.type, event.path, event.resourceType);
+    }
+    eventQueue.length = 0;
+  };
+
   // Start async resource scanning
-  const scanPromise = scanAndCreateResources(db, config.directory, pathMap)
-    .then(() => {
-      isScanning = false;
-      // Process queued events
-      for (const event of eventQueue) {
-        recordEventSync(event.type, event.path, event.resourceType);
-      }
-      eventQueue.length = 0;
-    })
+  const scanPromise = scanAndCreateResources(db, config.directory, config.treeDepth, pathMap)
+    .then(flushQueue)
     .catch((err) => {
       console.error("[events] Failed to scan resources:", err);
-      isScanning = false;
+      flushQueue();
     });
 
   // Helper: synchronously record event (assumes resource exists)
@@ -374,16 +391,7 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
   };
 
   // Public API: get analytics data
-  const getAnalytics = async (
-    directory?: string
-  ): Promise<{
-    currentDirectory: string;
-    mostViewed: Array<{ path: string; name: string; views: number }>;
-    timeSeries: Array<{ date: string; count: number }>;
-    zeroViews: Array<{ path: string; name: string }>;
-    totalEvents: number;
-    totalResources: number;
-  }> => {
+  const getAnalytics = async (directory?: string): Promise<AnalyticsData> => {
     // Wait for scanning to complete
     await scanPromise;
 
@@ -578,8 +586,7 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
   };
 
   // Public API: get database handle (for highlights and other extensions)
-  // biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-  const getDatabase = (): any => db;
+  const getDatabase = (): DatabaseHandle => db;
 
   return {
     recordEvent,
@@ -595,70 +602,21 @@ export const initEventService = (config: Config, dbPath?: string): EventService 
 
 // Side effect: enable analytics (sets database config)
 export const enableAnalytics = (): void => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-
-  // Initialize schema if needed
-  initializeDatabase(db);
-
-  // Set config
+  const { db, path } = openDatabase();
   setConfigValue(db, "analytics_enabled", "true");
-
   db.close();
 
   console.log("[events] Analytics enabled");
-  console.log(`[events] Database: ${dbPath}`);
+  console.log(`[events] Database: ${path}`);
 };
 
 // Side effect: disable analytics (sets database config)
 export const disableAnalytics = (): void => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-
-  // Initialize schema if needed
-  initializeDatabase(db);
-
-  // Set config
+  const { db } = openDatabase();
   setConfigValue(db, "analytics_enabled", "false");
-
   db.close();
 
   console.log("[events] Analytics disabled");
-};
-
-// Side effect: check analytics status (reads env and database)
-export const getAnalyticsStatus = (): {
-  enabled: boolean;
-  source: "environment" | "database" | "default";
-} => {
-  // Check environment variable first
-  if (process.env.LLMD_ENABLE_EVENTS === "false") {
-    return { enabled: false, source: "environment" };
-  }
-  if (process.env.LLMD_ENABLE_EVENTS === "true") {
-    return { enabled: true, source: "environment" };
-  }
-
-  // Check database
-  try {
-    const dbPath = resolveDatabasePath();
-    const db = createDatabase(dbPath);
-    initializeDatabase(db);
-    const configValue = getConfigValue(db, "analytics_enabled");
-    db.close();
-
-    if (configValue === "true") {
-      return { enabled: true, source: "database" };
-    }
-    if (configValue === "false") {
-      return { enabled: false, source: "database" };
-    }
-  } catch {
-    // Database doesn't exist or can't be read - use default
-  }
-
-  // Default: enabled
-  return { enabled: true, source: "default" };
 };
 
 // Side effect: save theme preferences to database
@@ -669,12 +627,8 @@ export const saveThemePreferences = (theme: string): void => {
       return;
     }
 
-    const dbPath = resolveDatabasePath();
-    const db = createDatabase(dbPath);
-    initializeDatabase(db);
-
+    const { db } = openDatabase();
     setConfigValue(db, "theme", theme);
-
     db.close();
   } catch (err) {
     // Silently fail - theme preferences are not critical
@@ -685,91 +639,20 @@ export const saveThemePreferences = (theme: string): void => {
 // Side effect: load theme preferences from database
 export const loadThemePreferences = (): { theme?: string } => {
   try {
-    const dbPath = resolveDatabasePath();
-    const db = createDatabase(dbPath);
-    initializeDatabase(db);
-
+    const { db } = openDatabase();
     const theme = getConfigValue(db, "theme");
-
     db.close();
 
-    return {
-      theme: theme || undefined,
-    };
+    return { theme: theme || undefined };
   } catch {
     // Database doesn't exist or can't be read - return empty
     return {};
   }
 };
 
-// Side effect: enable highlights (sets database config)
-export const enableHighlights = (): void => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-
-  // Initialize schema if needed
-  initializeDatabase(db);
-
-  // Set config
-  setConfigValue(db, "highlights_enabled", "true");
-
-  db.close();
-
-  console.log("[highlights] Highlights enabled");
-  console.log(`[highlights] Database: ${dbPath}`);
-};
-
-// Side effect: disable highlights (sets database config)
-export const disableHighlights = (): void => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-
-  // Initialize schema if needed
-  initializeDatabase(db);
-
-  // Set config
-  setConfigValue(db, "highlights_enabled", "false");
-
-  db.close();
-
-  console.log("[highlights] Highlights disabled");
-};
-
-// Side effect: check if highlights is enabled
-// Priority: 1) Environment variable, 2) Database config, 3) Default (enabled)
-export const isHighlightsEnabled = (): boolean => {
-  // Environment variable takes precedence
-  if (process.env.LLMD_ENABLE_HIGHLIGHTS === "false") {
-    return false;
-  }
-  if (process.env.LLMD_ENABLE_HIGHLIGHTS === "true") {
-    return true;
-  }
-
-  // Check database config
-  try {
-    const dbPath = resolveDatabasePath();
-    const db = createDatabase(dbPath);
-    initializeDatabase(db);
-    const configValue = getConfigValue(db, "highlights_enabled");
-    db.close();
-
-    // Default to enabled if not set
-    if (configValue === "false") {
-      return false;
-    }
-    return true; // Default: enabled
-  } catch {
-    // Database doesn't exist or can't be read - default to enabled
-    return true;
-  }
-};
-
 // Side effect: get database statistics
 export const getDatabaseStats = async (): Promise<import("./types").DatabaseStats> => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-  initializeDatabase(db);
+  const { db, path: dbPath } = openDatabase();
 
   try {
     // Get file size
@@ -810,9 +693,7 @@ export const getDatabaseStats = async (): Promise<import("./types").DatabaseStat
 export const cleanupOldEvents = (
   days: number
 ): { deletedEvents: number; deletedResources: number } => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-  initializeDatabase(db);
+  const { db } = openDatabase();
 
   try {
     const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -838,9 +719,7 @@ export const cleanupOldEvents = (
 
 // Side effect: clear all events and resources from database
 export const clearDatabase = (): void => {
-  const dbPath = resolveDatabasePath();
-  const db = createDatabase(dbPath);
-  initializeDatabase(db);
+  const { db } = openDatabase();
 
   try {
     // Delete all events first (due to foreign key constraints)

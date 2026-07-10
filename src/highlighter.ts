@@ -74,18 +74,17 @@ const languageModules = {
 };
 
 // Initialize highlighter with only the languages we need
-// biome-ignore lint/suspicious/noExplicitAny: Shiki theme type compatibility
 const getHighlighter = async (themeName: string): Promise<HighlighterCore> => {
   if (!highlighter) {
     // Flatten all language arrays into single array
     const allLangs = Object.values(languageModules).flat();
 
-    // Load the initial theme
+    // Load the initial theme (loadTheme returns an untyped Shiki theme object)
     const theme = await loadTheme(themeName);
 
     highlighter = await createHighlighterCore({
       langs: allLangs,
-      themes: [theme as any],
+      themes: [theme],
       engine: createJavaScriptRegexEngine(),
     });
 
@@ -93,7 +92,7 @@ const getHighlighter = async (themeName: string): Promise<HighlighterCore> => {
   } else if (!loadedThemes.has(themeName)) {
     // Load additional theme if not already loaded
     const theme = await loadTheme(themeName);
-    await highlighter.loadTheme(theme as any);
+    await highlighter.loadTheme(theme);
     loadedThemes.add(themeName);
   }
 
@@ -108,7 +107,7 @@ const detectLanguage = (lang: string | undefined): SupportedLanguage | "plaintex
     return "plaintext";
   }
 
-  // Normalize common aliases
+  // Normalize common aliases (only for grammars that are actually bundled)
   const langLower = lang.toLowerCase();
   const aliases: Record<string, SupportedLanguage> = {
     js: "javascript",
@@ -117,9 +116,6 @@ const detectLanguage = (lang: string | undefined): SupportedLanguage | "plaintex
     sh: "bash",
     yml: "yaml",
     rs: "rust",
-    rb: "ruby",
-    cs: "csharp",
-    "c++": "cpp",
   };
 
   const normalized = aliases[langLower] || langLower;

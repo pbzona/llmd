@@ -1,18 +1,20 @@
 // API routes handler
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { join } from "node:path";
+import { isLocalRequest, parseJsonBody, resolveSafePath, sendJson, sendText } from "../http-utils";
 import type { Config, EventService } from "../types";
 import {
   handleCreateHighlight,
   handleDeleteHighlight,
   handleGetDirectoryHighlights,
   handleGetResourceHighlights,
-  handleRestoreFile,
 } from "./highlights";
 
-// Context for route handlers
-type RouteContext = {
+// Prefix for highlight-scoped routes (used for ID extraction).
+const HIGHLIGHTS_PREFIX = "/api/highlights/";
+
+// Context for route handlers (also the public entry-point argument)
+export type RouteContext = {
   req: IncomingMessage;
   res: ServerResponse;
   pathname: string;
@@ -21,40 +23,6 @@ type RouteContext = {
   eventService: EventService | null;
 };
 
-// Helper: send JSON response
-const sendJson = (res: ServerResponse, statusCode: number, data: unknown): void => {
-  res.writeHead(statusCode, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(data));
-};
-
-// Helper: send response
-const sendResponse = (
-  res: ServerResponse,
-  statusCode: number,
-  headers: Record<string, string>,
-  body: string
-): void => {
-  res.writeHead(statusCode, headers);
-  res.end(body);
-};
-
-// Helper: parse JSON body
-const parseJsonBody = async (req: IncomingMessage): Promise<unknown> =>
-  new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(body));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on("error", reject);
-  });
-
 // Handle events API routes
 const handleEventsRoute = async (ctx: RouteContext): Promise<boolean> => {
   if (ctx.pathname !== "/api/events" || ctx.req.method !== "POST") {
@@ -62,7 +30,7 @@ const handleEventsRoute = async (ctx: RouteContext): Promise<boolean> => {
   }
 
   if (!ctx.eventService) {
-    sendResponse(ctx.res, 501, { "Content-Type": "text/plain" }, "Events disabled");
+    sendText(ctx.res, 501, "Events disabled");
     return true;
   }
 
@@ -73,16 +41,16 @@ const handleEventsRoute = async (ctx: RouteContext): Promise<boolean> => {
       resourceType: "file" | "dir";
     };
 
-    const absolutePath = body.path.startsWith("/")
-      ? body.path
-      : join(ctx.config.directory, body.path);
-
-    ctx.eventService.recordEvent(body.type, absolutePath, body.resourceType);
-    sendResponse(ctx.res, 204, {}, "");
+    // Only record events for resources inside the served directory.
+    const absolutePath = resolveSafePath(ctx.config.directory, body.path);
+    if (absolutePath) {
+      ctx.eventService.recordEvent(body.type, absolutePath, body.resourceType);
+    }
+    sendJson(ctx.res, 204, {});
     return true;
   } catch (err) {
     console.error("[events] Failed to record event:", err);
-    sendResponse(ctx.res, 400, { "Content-Type": "text/plain" }, "Invalid request");
+    sendText(ctx.res, 400, "Invalid request");
     return true;
   }
 };
@@ -137,23 +105,26 @@ const handleMarkdownRoute = async (ctx: RouteContext): Promise<boolean> => {
     return false;
   }
 
-  // Get raw markdown content
+  // Get raw markdown content (constrained to the served directory)
   if (ctx.pathname === "/api/markdown/raw" && ctx.req.method === "GET") {
     const markdownPath = ctx.url.searchParams.get("path");
     if (!markdownPath) {
-      sendResponse(ctx.res, 400, { "Content-Type": "text/plain" }, "Missing path parameter");
+      sendText(ctx.res, 400, "Missing path parameter");
+      return true;
+    }
+
+    const absolutePath = resolveSafePath(ctx.config.directory, markdownPath);
+    if (!absolutePath) {
+      sendText(ctx.res, 403, "Path outside served directory");
       return true;
     }
 
     try {
       const { readFile } = await import("node:fs/promises");
-      const absolutePath = markdownPath.startsWith("/")
-        ? markdownPath
-        : join(ctx.config.directory, markdownPath);
       const content = await readFile(absolutePath, "utf-8");
       sendJson(ctx.res, 200, { content });
     } catch {
-      sendResponse(ctx.res, 404, { "Content-Type": "text/plain" }, "File not found");
+      sendText(ctx.res, 404, "File not found");
     }
     return true;
   }
@@ -168,7 +139,7 @@ const handleHighlightsRoute = async (ctx: RouteContext): Promise<boolean> => {
   }
 
   if (!ctx.eventService) {
-    sendResponse(ctx.res, 501, { "Content-Type": "text/plain" }, "Events disabled");
+    sendText(ctx.res, 501, "Events disabled");
     return true;
   }
 
@@ -193,10 +164,10 @@ const handleHighlightsRoute = async (ctx: RouteContext): Promise<boolean> => {
   }
 
   // Delete highlight
-  if (ctx.pathname.startsWith("/api/highlights/") && ctx.req.method === "DELETE") {
-    const highlightId = ctx.pathname.slice(17);
+  if (ctx.pathname.startsWith(HIGHLIGHTS_PREFIX) && ctx.req.method === "DELETE") {
+    const highlightId = ctx.pathname.slice(HIGHLIGHTS_PREFIX.length);
     if (!highlightId || highlightId.includes("/")) {
-      sendResponse(ctx.res, 400, { "Content-Type": "text/plain" }, "Invalid highlight ID");
+      sendText(ctx.res, 400, "Invalid highlight ID");
       return true;
     }
 
@@ -204,45 +175,20 @@ const handleHighlightsRoute = async (ctx: RouteContext): Promise<boolean> => {
     return true;
   }
 
-  // Export highlights
-  if (ctx.pathname === "/api/highlights/export" && ctx.req.method === "POST") {
-    const { handleExportHighlights } = await import("./highlights");
-    await handleExportHighlights(ctx.req, ctx.res, { config: ctx.config, db });
-    return true;
-  }
-
-  // Restore file from backup
-  const isRestoreRoute =
-    ctx.pathname.startsWith("/api/highlights/") && ctx.pathname.endsWith("/restore");
-  if (isRestoreRoute && ctx.req.method === "POST") {
-    const parts = ctx.pathname.slice(17).split("/");
-    const highlightId = parts[0];
-    if (!highlightId || parts.length !== 2) {
-      sendResponse(ctx.res, 400, { "Content-Type": "text/plain" }, "Invalid highlight ID");
-      return true;
-    }
-
-    await handleRestoreFile(ctx.req, ctx.res, { config: ctx.config, db }, highlightId);
-    return true;
-  }
-
   return false;
 };
 
 // Main API router - dispatches to specific route handlers
-export const handleApiRoute = async (
-  req: IncomingMessage,
-  res: ServerResponse,
-  pathname: string,
-  url: URL,
-  config: Config,
-  eventService: EventService | null
-): Promise<boolean> => {
-  if (!pathname.startsWith("/api/")) {
+export const handleApiRoute = async (ctx: RouteContext): Promise<boolean> => {
+  if (!ctx.pathname.startsWith("/api/")) {
     return false;
   }
 
-  const ctx: RouteContext = { req, res, pathname, url, config, eventService };
+  // Reject cross-origin / non-loopback requests (DNS-rebinding + CSRF guard).
+  if (!isLocalRequest(ctx.req)) {
+    sendText(ctx.res, 403, "Forbidden");
+    return true;
+  }
 
   // Try each route handler
   if (await handleEventsRoute(ctx)) {
@@ -254,9 +200,5 @@ export const handleApiRoute = async (
   if (await handleMarkdownRoute(ctx)) {
     return true;
   }
-  if (await handleHighlightsRoute(ctx)) {
-    return true;
-  }
-
-  return false;
+  return handleHighlightsRoute(ctx);
 };

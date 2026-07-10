@@ -1,7 +1,17 @@
 // Analytics page template generation
 
+import { escapeAttr, escapeHtml } from "./escape";
 import { baseLayout } from "./template";
 import type { AnalyticsData, Config, MarkdownFile } from "./types";
+
+// Pure function: percent-encode a relative path for a /view/ URL
+const encodePath = (path: string): string => path.split("/").map(encodeURIComponent).join("/");
+
+// Pure function: compute the parent-path label shown under a document name
+const parentLabel = (relativePath: string): string => {
+  const parentPath = relativePath.slice(0, relativePath.lastIndexOf("/"));
+  return parentPath ? `/${parentPath}` : "/";
+};
 
 // Helper: format file size in bytes to human-readable kB
 const formatFileSize = (bytes: number | null | undefined): string => {
@@ -66,7 +76,7 @@ const generateAnalyticsContent = (data: AnalyticsData, showAllHistory: boolean):
             id="tab-current" 
             class="analytics-tab ${showAllHistory ? "" : "active"}"
             style="padding: 12px 20px; background: none; border: none; border-bottom: 2px solid ${showAllHistory ? "transparent" : "var(--accent)"}; color: ${showAllHistory ? "var(--fg)" : "var(--accent)"}; cursor: pointer; font-size: 14px; font-weight: 600; opacity: ${showAllHistory ? "0.6" : "1"}; transition: all 0.2s;"
-            onclick="location.href='/analytics?directory=' + encodeURIComponent('${data.currentDirectory}')"
+            onclick="location.href='/analytics?directory=${encodeURIComponent(data.currentDirectory)}'"
           >
             Current Directory
           </button>
@@ -109,21 +119,18 @@ const generateAnalyticsContent = (data: AnalyticsData, showAllHistory: boolean):
             ? `
           <div style="background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
             ${data.mostViewed
-              .map(
-                (doc, i) => `
+              .map((doc, i) => {
+                const relativePath = doc.path.replace(`${data.currentDirectory}/`, "");
+                return `
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: ${i < data.mostViewed.length - 1 ? "1px solid var(--border)" : "none"};">
                 <div style="display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1;">
                   <span style="opacity: 0.4; font-size: 13px; font-weight: 600; width: 24px; flex-shrink: 0;">${i + 1}</span>
                   <div style="min-width: 0; flex: 1;">
-                    <a href="/view/${doc.path.replace(`${data.currentDirectory}/`, "")}" style="color: var(--fg); text-decoration: none; font-size: 14px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
-                      ${doc.name}
+                    <a href="/view/${escapeAttr(encodePath(relativePath))}" style="color: var(--fg); text-decoration: none; font-size: 14px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeAttr(doc.path)}">
+                      ${escapeHtml(doc.name)}
                     </a>
-                    <div style="opacity: 0.5; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
-                      ${(() => {
-                        const relativePath = doc.path.replace(`${data.currentDirectory}/`, "");
-                        const parentPath = relativePath.substring(0, relativePath.lastIndexOf("/"));
-                        return parentPath ? `/${parentPath}` : "/";
-                      })()}
+                    <div style="opacity: 0.5; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeAttr(doc.path)}">
+                      ${escapeHtml(parentLabel(relativePath))}
                     </div>
                   </div>
                 </div>
@@ -136,8 +143,8 @@ const generateAnalyticsContent = (data: AnalyticsData, showAllHistory: boolean):
                   </span>
                 </div>
               </div>
-            `
-              )
+            `;
+              })
               .join("")}
           </div>
         `
@@ -162,27 +169,24 @@ const generateAnalyticsContent = (data: AnalyticsData, showAllHistory: boolean):
           <div style="background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
             ${data.zeroViews
               .slice(0, 20)
-              .map(
-                (doc, i) => `
+              .map((doc, i) => {
+                const relativePath = doc.path.replace(`${data.currentDirectory}/`, "");
+                return `
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: ${i < Math.min(data.zeroViews.length, 20) - 1 ? "1px solid var(--border)" : "none"};">
                 <div style="min-width: 0; flex: 1;">
-                  <a href="/view/${doc.path.replace(`${data.currentDirectory}/`, "")}" style="color: var(--fg); text-decoration: none; font-size: 14px; opacity: 0.7; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
-                    ${doc.name}
+                  <a href="/view/${escapeAttr(encodePath(relativePath))}" style="color: var(--fg); text-decoration: none; font-size: 14px; opacity: 0.7; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeAttr(doc.path)}">
+                    ${escapeHtml(doc.name)}
                   </a>
-                  <div style="opacity: 0.4; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${doc.path}">
-                    ${(() => {
-                      const relativePath = doc.path.replace(`${data.currentDirectory}/`, "");
-                      const parentPath = relativePath.substring(0, relativePath.lastIndexOf("/"));
-                      return parentPath ? `/${parentPath}` : "/";
-                    })()}
+                  <div style="opacity: 0.4; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeAttr(doc.path)}">
+                    ${escapeHtml(parentLabel(relativePath))}
                   </div>
                 </div>
                 <span style="opacity: 0.4; font-size: 11px; white-space: nowrap; margin-left: 16px;">
                   ${formatFileSize(doc.sizeBytes)}
                 </span>
               </div>
-            `
-              )
+            `;
+              })
               .join("")}
             ${data.zeroViews.length > 20 ? `<div style="padding: 12px 20px; opacity: 0.6; font-size: 13px;">...and ${data.zeroViews.length - 20} more</div>` : ""}
           </div>

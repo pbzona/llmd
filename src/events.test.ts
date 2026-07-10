@@ -16,6 +16,7 @@ const createTestConfig = (directory: string): Config => ({
   theme: "dark",
   open: false,
   watch: false,
+  treeDepth: 5,
 });
 
 // Helper: setup test directory with markdown files
@@ -51,19 +52,19 @@ describe("Event Service", () => {
 
   test("should initialize by default when LLMD_ENABLE_EVENTS is not set (opt-out)", () => {
     // Events are enabled by default (opt-out)
-    process.env.LLMD_ENABLE_EVENTS = undefined;
+    Reflect.deleteProperty(process.env, "LLMD_ENABLE_EVENTS");
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
     expect(service).not.toBeNull();
     service?.close();
 
-    process.env.LLMD_ENABLE_EVENTS = undefined;
+    Reflect.deleteProperty(process.env, "LLMD_ENABLE_EVENTS");
     cleanupTestDirectory();
   });
 
   test("should initialize database and scan resources", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -84,7 +85,7 @@ describe("Event Service", () => {
   });
 
   test("should record view events", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -111,7 +112,7 @@ describe("Event Service", () => {
   });
 
   test("should track multiple views of same file", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -135,7 +136,7 @@ describe("Event Service", () => {
   });
 
   test("should get activity time series", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -156,7 +157,7 @@ describe("Event Service", () => {
   });
 
   test("should filter by directory", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -180,7 +181,7 @@ describe("Event Service", () => {
   });
 
   test("should ignore node_modules directory", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -197,7 +198,7 @@ describe("Event Service", () => {
   });
 
   test("should queue events during scanning", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -219,7 +220,7 @@ describe("Event Service", () => {
   });
 
   test("should handle non-existent files gracefully", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const config = createTestConfig(TEST_DIR);
     const service = initEventService(config, ":memory:");
 
@@ -241,7 +242,7 @@ describe("Event Service", () => {
   });
 
   test("should return empty analytics for empty directory", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     const emptyDir = join(TEST_DIR, "empty");
     mkdirSync(emptyDir, { recursive: true });
 
@@ -263,7 +264,7 @@ describe("Event Service", () => {
   });
 
   test("should get database statistics", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     setupTestDirectory();
 
     const config = createTestConfig(TEST_DIR);
@@ -292,7 +293,7 @@ describe("Event Service", () => {
   });
 
   test("should cleanup old events", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     setupTestDirectory();
 
     const config = createTestConfig(TEST_DIR);
@@ -323,7 +324,7 @@ describe("Event Service", () => {
   });
 
   test("should clear database", async () => {
-    process.env.LLMD_ENABLE_EVENTS = "1";
+    process.env.LLMD_ENABLE_EVENTS = "true";
     setupTestDirectory();
 
     const config = createTestConfig(TEST_DIR);

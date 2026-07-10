@@ -12,15 +12,59 @@ import {
   cleanupOldEvents,
   clearDatabase,
   disableAnalytics,
-  disableHighlights,
   enableAnalytics,
-  enableHighlights,
   getDatabaseStats,
+  openDatabase,
   saveThemePreferences,
 } from "./src/events";
 import { getRelativePath, scanMarkdownFiles } from "./src/scanner";
 import { getServerUrl, startServer } from "./src/server";
 import { printSplash } from "./src/splash";
+import type { Config } from "./src/types";
+
+// Delay before opening the browser, to let the server finish binding.
+const BROWSER_OPEN_DELAY_MS = 300;
+
+// Pure function: determine the initial URL to open based on config
+const computeInitialUrl = (baseUrl: string, config: Config): string => {
+  if (config.openToAnalytics) {
+    return `${baseUrl}/analytics`;
+  }
+  if (config.initialFile) {
+    return `${baseUrl}/view/${getRelativePath(config.initialFile, config.directory)}`;
+  }
+  return baseUrl;
+};
+
+// Side effect: scan, start the server, open the browser, and wire shutdown.
+const runServer = async (config: Config): Promise<void> => {
+  console.log(`→ Scanning ${config.directory}...`);
+  const files = await scanMarkdownFiles(config.directory, config.treeDepth);
+  console.log(`✓ Found ${files.length} markdown file${files.length === 1 ? "" : "s"}\n`);
+
+  const server = await startServer(config, files);
+  const url = getServerUrl(server);
+  const initialUrl = computeInitialUrl(url, config);
+
+  console.log(`▸ Server running at ${url}`);
+  console.log(`  Theme: ${config.theme}`);
+  if (config.openToAnalytics) {
+    console.log("  Opening: Analytics");
+  } else if (config.initialFile) {
+    console.log(`  Opening: ${getRelativePath(config.initialFile, config.directory)}`);
+  }
+  console.log("\n  Press Ctrl+C to stop\n");
+
+  if (config.open) {
+    await new Promise((resolve) => setTimeout(resolve, BROWSER_OPEN_DELAY_MS));
+    openBrowser(initialUrl);
+  }
+
+  process.on("SIGINT", () => {
+    console.log("\n\n✓ Shutting down...");
+    server.stop().finally(() => process.exit(0));
+  });
+};
 
 // Side effect: Clone or update llmd repo and launch server
 const handleDocsCommand = async (): Promise<void> => {
@@ -60,34 +104,7 @@ const handleDocsCommand = async (): Promise<void> => {
     throw new Error("Unexpected result from parseCli");
   }
 
-  const config = result.config;
-
-  // Scan and start server
-  const files = await scanMarkdownFiles(config.directory, config.treeDepth);
-  const server = await startServer(config, files);
-  const url = getServerUrl(server);
-
-  let initialUrl = url;
-  if (config.initialFile) {
-    const relativePath = getRelativePath(config.initialFile, config.directory);
-    initialUrl = `${url}/view/${relativePath}`;
-  }
-
-  console.log(`▸ Server running at ${url}`);
-  console.log(`  Theme: ${config.theme}`);
-  console.log("\n  Press Ctrl+C to stop\n");
-
-  if (config.open) {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    openBrowser(initialUrl);
-  }
-
-  // Handle graceful shutdown
-  process.on("SIGINT", () => {
-    console.log("\n\n✓ Shutting down...");
-    server.stop();
-    process.exit(0);
-  });
+  await runServer(result.config);
 };
 
 // Side effect: Handle db check command
@@ -154,8 +171,8 @@ const handleDbClear = async (): Promise<void> => {
 };
 
 // Side effect: Handle archive list command
-const handleArchiveList = (): void => {
-  const { listArchiveFiles } = require("./src/highlights");
+const handleArchiveList = async (): Promise<void> => {
+  const { listArchiveFiles } = await import("./src/highlights");
   const files = listArchiveFiles();
 
   if (files.length === 0) {
@@ -177,8 +194,8 @@ const handleArchiveList = (): void => {
 };
 
 // Side effect: Handle archive show command
-const handleArchiveShow = (searchPath: string): void => {
-  const { getArchiveFileDetails } = require("./src/highlights");
+const handleArchiveShow = async (searchPath: string): Promise<void> => {
+  const { getArchiveFileDetails } = await import("./src/highlights");
   const details = getArchiveFileDetails(searchPath);
 
   if (!details) {
@@ -207,7 +224,7 @@ const handleArchiveShow = (searchPath: string): void => {
 
 // Side effect: Handle archive clear command
 const handleArchiveClear = async (): Promise<void> => {
-  const { listArchiveFiles, clearArchive } = require("./src/highlights");
+  const { listArchiveFiles, clearArchive } = await import("./src/highlights");
   const files = listArchiveFiles();
 
   if (files.length === 0) {
@@ -247,47 +264,24 @@ const handleExport = async (directoryPath: string): Promise<void> => {
   const { getHighlightsByDirectory, generateMarkdownExport, writeMarkdownExport } = await import(
     "./src/highlights"
   );
-  const { basename, resolve: resolvePath, join: joinPath } = await import("node:path");
-  const { homedir: getHomedir } = await import("node:os");
+  const { basename, resolve: resolvePath } = await import("node:path");
 
-  // Resolve the path
   const absolutePath = resolvePath(directoryPath);
-
   console.log(`→ Exporting highlights from ${absolutePath}...\n`);
 
-  // Resolve database path (same logic as events.ts)
-  const xdgDataHome = process.env.XDG_DATA_HOME;
-  const baseDir = xdgDataHome || joinPath(getHomedir(), ".local", "share");
-  const dbPath = joinPath(baseDir, "llmd", "llmd.db");
-
-  // Open database
-  const createDatabase = (path: string) => {
-    if (typeof Bun !== "undefined" && (globalThis as any).Bun) {
-      const { Database } = require("bun:sqlite");
-      return new Database(path);
-    }
-    const LibSQL = require("libsql");
-    return new LibSQL(path);
-  };
-
-  const db = createDatabase(dbPath);
+  const { db } = openDatabase();
 
   try {
-    // Get highlights
     const highlights = getHighlightsByDirectory(db, absolutePath);
 
     if (highlights.length === 0) {
       console.log("✗ No highlights found in this directory\n");
-      db.close();
       return;
     }
 
-    // Generate filename
     const dateStr = new Date().toISOString().replace(/[:.]/g, "-").split("T")[0];
-    const dirName = basename(absolutePath);
-    const filename = `${dirName}-${dateStr}.md`;
+    const filename = `${basename(absolutePath)}-${dateStr}.md`;
 
-    // Generate and write export
     const content = generateMarkdownExport(highlights, absolutePath);
     const exportPath = writeMarkdownExport(content, filename);
 
@@ -299,7 +293,6 @@ const handleExport = async (directoryPath: string): Promise<void> => {
 };
 
 // Main async function
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI coordination requires branching
 const main = async () => {
   try {
     // Print splash
@@ -324,23 +317,13 @@ const main = async () => {
       process.exit(0);
     }
 
-    if (result.type === "highlights-enable") {
-      enableHighlights();
-      process.exit(0);
-    }
-
-    if (result.type === "highlights-disable") {
-      disableHighlights();
-      process.exit(0);
-    }
-
     if (result.type === "db-check") {
       await handleDbCheck();
       process.exit(0);
     }
 
     if (result.type === "db-cleanup") {
-      await handleDbCleanup(result.days);
+      handleDbCleanup(result.days);
       process.exit(0);
     }
 
@@ -351,17 +334,17 @@ const main = async () => {
 
     if (result.type === "docs") {
       await handleDocsCommand();
-      // Keep process running - handleDocsCommand sets up SIGINT handler
+      // Keep process running - runServer sets up the SIGINT handler
       return;
     }
 
     if (result.type === "archive-list") {
-      handleArchiveList();
+      await handleArchiveList();
       process.exit(0);
     }
 
     if (result.type === "archive-show") {
-      handleArchiveShow(result.path);
+      await handleArchiveShow(result.path);
       process.exit(0);
     }
 
@@ -375,54 +358,10 @@ const main = async () => {
       process.exit(0);
     }
 
-    // Must be config type
+    // Must be config type: save preferences and run the server
     const config = result.config;
-
-    // Save theme preferences for next time
     saveThemePreferences(config.theme);
-
-    // Scan for markdown files
-    console.log(`→ Scanning ${config.directory}...`);
-    const files = await scanMarkdownFiles(config.directory, config.treeDepth);
-    console.log(`✓ Found ${files.length} markdown file${files.length === 1 ? "" : "s"}\n`);
-
-    // Start server
-    const server = await startServer(config, files);
-    const url = getServerUrl(server);
-
-    // Determine initial URL (open to specific file or analytics if requested)
-    let initialUrl = url;
-    if (config.openToAnalytics) {
-      initialUrl = `${url}/analytics`;
-    } else if (config.initialFile) {
-      const relativePath = getRelativePath(config.initialFile, config.directory);
-      initialUrl = `${url}/view/${relativePath}`;
-    }
-
-    console.log(`▸ Server running at ${url}`);
-    console.log(`  Theme: ${config.theme}`);
-
-    if (config.openToAnalytics) {
-      console.log("  Opening: Analytics");
-    } else if (config.initialFile) {
-      const relativePath = getRelativePath(config.initialFile, config.directory);
-      console.log(`  Opening: ${relativePath}`);
-    }
-
-    console.log("\n  Press Ctrl+C to stop\n");
-
-    // Open browser if requested (with a small delay to let server fully start)
-    if (config.open) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      openBrowser(initialUrl);
-    }
-
-    // Handle graceful shutdown
-    process.on("SIGINT", () => {
-      console.log("\n\n✓ Shutting down...");
-      server.stop();
-      process.exit(0);
-    });
+    await runServer(config);
   } catch (error) {
     if (error instanceof Error) {
       console.error(`\n✗ Error: ${error.message}\n`);

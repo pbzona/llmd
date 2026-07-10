@@ -1,8 +1,7 @@
 // HTTP server using Node.js http + ws
 
 import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { join } from "node:path";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import {
@@ -12,12 +11,26 @@ import {
   hasSourceMaps,
 } from "./client-assets";
 import { initEventService } from "./events";
+import { resolveSafePath, sendResponse, sendText } from "./http-utils";
 import { processMarkdown } from "./markdown";
 import { handleApiRoute } from "./routes/api";
 import { generateErrorPage, generateIndexPage, generateMarkdownPage } from "./template";
 import { getTheme } from "./theme-config";
 import type { Config, EventService, MarkdownFile } from "./types";
-import { unwatchFile, watchFile } from "./watcher";
+import { cleanupAllWatchers, unwatchFile, watchFile } from "./watcher";
+
+// Inlined favicon so it ships with the single-file bundle (no fs dependency).
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="blueGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1"/><stop offset="100%" style="stop-color:#2563eb;stop-opacity:1"/></linearGradient></defs><path d="M16 6 L16 20 M16 20 L10 14 M16 20 L22 14" stroke="url(#blueGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+
+// A running server instance with a consistent public API.
+export type ServerHandle = {
+  hostname: string;
+  port: number;
+  stop: () => Promise<void>;
+};
+
+// WebSocket augmented with the set of files a client is watching.
+type WatchSocket = WebSocket & { files?: Set<string> };
 
 // Pure function: create HTML response headers with cache control
 const htmlHeaders = (): Record<string, string> => ({
@@ -27,36 +40,91 @@ const htmlHeaders = (): Record<string, string> => ({
   Expires: "0",
 });
 
-// Pure function: parse URL path to extract file path
+// Pure function: parse and decode a /view/ URL path to a relative file path
 const parseViewPath = (pathname: string): string | null => {
   if (!pathname.startsWith("/view/")) {
     return null;
   }
 
-  const filePath = pathname.slice(6); // Remove "/view/"
+  let filePath: string;
+  try {
+    filePath = decodeURIComponent(pathname.slice(6)); // Remove "/view/"
+  } catch {
+    return null; // Malformed percent-encoding
+  }
+
   return filePath.endsWith(".md") ? filePath : null;
 };
 
-// Side effect: read markdown file
+// Side effect: read a markdown file constrained to the served directory.
+// Returns null when the path escapes the root or the file cannot be read.
 const readMarkdownFile = async (rootDir: string, relativePath: string): Promise<string | null> => {
+  const fullPath = resolveSafePath(rootDir, relativePath);
+  if (!fullPath) {
+    return null;
+  }
+
   try {
-    const fullPath = join(rootDir, relativePath);
-    const content = await readFile(fullPath, "utf-8");
-    return content;
+    return await readFile(fullPath, "utf-8");
   } catch {
     return null;
   }
 };
 
-// Helper: send response
-const sendResponse = (
-  res: import("node:http").ServerResponse,
-  statusCode: number,
-  headers: Record<string, string>,
-  body: string
-): void => {
-  res.writeHead(statusCode, headers);
-  res.end(body);
+// Helper: resolve the Shiki code theme for the active UI theme
+const resolveCodeTheme = (config: Config): string => {
+  const theme = getTheme(config.theme);
+  if (theme.codeTheme) {
+    return theme.codeTheme;
+  }
+  return config.theme === "light" || config.theme === "solarized" ? "github-light" : "github-dark";
+};
+
+// Helper: inject highlight marks into markdown source
+const injectHighlightMarks = (
+  markdown: string,
+  highlights: Array<{ id: string; startOffset: number; endOffset: number; isStale: boolean }>
+): string => {
+  // Stale highlights are not rendered inline (their offsets are untrusted).
+  const active = highlights.filter((h) => !h.isStale);
+
+  // Apply from end to start so earlier offsets are not shifted.
+  const sorted = [...active].sort((a, b) => b.startOffset - a.startOffset);
+
+  let result = markdown;
+  for (const highlight of sorted) {
+    const before = result.slice(0, highlight.startOffset);
+    const text = result.slice(highlight.startOffset, highlight.endOffset);
+    const after = result.slice(highlight.endOffset);
+    const mark = `<mark class="llmd-highlight" data-highlight-id="${highlight.id}">${text}</mark>`;
+    result = before + mark + after;
+  }
+
+  return result;
+};
+
+// Helper: decorate markdown with any active highlights for the resource
+const decorateWithHighlights = async (
+  markdown: string,
+  absolutePath: string,
+  eventService: EventService | null
+): Promise<string> => {
+  if (!eventService) {
+    return markdown;
+  }
+
+  const highlightsModule = await import("./highlights");
+  const db = eventService.getDatabase();
+  const resource = highlightsModule.getResourceByPath(db, absolutePath);
+  if (!resource) {
+    return markdown;
+  }
+
+  // Non-destructive: flag highlights stale when the file changed; never delete.
+  highlightsModule.markStaleHighlights(db, resource.id, markdown);
+
+  const highlights = highlightsModule.getHighlightsByResource(db, resource.id);
+  return highlights.length > 0 ? injectHighlightMarks(markdown, highlights) : markdown;
 };
 
 // Helper: handle markdown file view
@@ -65,13 +133,13 @@ const handleMarkdownView = async (params: {
   config: Config;
   files: MarkdownFile[];
   clientScript: string;
-  res: import("node:http").ServerResponse;
+  res: ServerResponse;
   eventService: EventService | null;
 }): Promise<void> => {
   const { viewPath, config, files, clientScript, res, eventService } = params;
   const markdown = await readMarkdownFile(config.directory, viewPath);
 
-  if (!markdown) {
+  if (markdown === null) {
     const html = generateErrorPage({
       errorCode: 404,
       message: `File not found: ${viewPath}`,
@@ -84,36 +152,15 @@ const handleMarkdownView = async (params: {
   }
 
   try {
-    // Inject highlight marks into markdown before rendering
-    let markdownWithHighlights = markdown;
-    if (eventService) {
-      const pathModule = await import("node:path");
-      const highlightsModule = await import("./highlights");
-      const db = eventService.getDatabase();
-      const absolutePath = pathModule.join(config.directory, viewPath);
-      const resource = highlightsModule.getResourceByPath(db, absolutePath);
-
-      if (resource) {
-        // Clean up highlights where text no longer exists in document
-        const deletedCount = highlightsModule.deleteInvalidHighlights(db, resource.id, markdown);
-        if (deletedCount > 0) {
-          console.log(`[highlights] Deleted ${deletedCount} invalid highlight(s) from ${viewPath}`);
-        }
-
-        const highlights = highlightsModule.getHighlightsByResource(db, resource.id);
-        if (highlights.length > 0) {
-          markdownWithHighlights = injectHighlightMarks(markdown, highlights);
-        }
-      }
-    }
+    const absolutePath = resolveSafePath(config.directory, viewPath) ?? "";
+    const markdownWithHighlights = await decorateWithHighlights(
+      markdown,
+      absolutePath,
+      eventService
+    );
 
     const filename = viewPath.split("/").pop() ?? viewPath;
-    // Get code theme from theme configuration
-    const theme = getTheme(config.theme);
-    const codeTheme =
-      theme.codeTheme ||
-      (config.theme === "light" || config.theme === "solarized" ? "github-light" : "github-dark");
-    const { html, toc } = await processMarkdown(markdownWithHighlights, codeTheme);
+    const { html, toc } = await processMarkdown(markdownWithHighlights, resolveCodeTheme(config));
     const page = generateMarkdownPage({
       html,
       toc,
@@ -138,55 +185,160 @@ const handleMarkdownView = async (params: {
   }
 };
 
-// Helper: inject highlight marks into markdown source
-const injectHighlightMarks = (
-  markdown: string,
-  highlights: Array<{
-    id: string;
-    startOffset: number;
-    endOffset: number;
-    isStale: boolean;
-  }>
-): string => {
-  // Filter out stale highlights - don't render them inline
-  const activeHighlights = highlights.filter((h) => !h.isStale);
+// Helper: serve the analytics page
+const handleAnalyticsPage = async (params: {
+  url: URL;
+  config: Config;
+  files: MarkdownFile[];
+  clientScript: string;
+  res: ServerResponse;
+  eventService: EventService;
+}): Promise<void> => {
+  const { url, config, files, clientScript, res, eventService } = params;
+  try {
+    const showAllHistory = url.searchParams.get("all") === "true";
+    const directory = showAllHistory
+      ? undefined
+      : url.searchParams.get("directory") || config.directory;
 
-  // Sort highlights by start offset in reverse order
-  const sorted = [...activeHighlights].sort((a, b) => b.startOffset - a.startOffset);
+    const analytics = await eventService.getAnalytics(directory);
+    analytics.timeSeries = await eventService.getActivityTimeSeries(directory || null, 7);
 
-  let result = markdown;
-
-  // Apply highlights from end to start to avoid offset shifts
-  for (const highlight of sorted) {
-    const before = result.slice(0, highlight.startOffset);
-    const text = result.slice(highlight.startOffset, highlight.endOffset);
-    const after = result.slice(highlight.endOffset);
-
-    // Create mark element with highlight ID
-    const mark = `<mark class="llmd-highlight" data-highlight-id="${highlight.id}">${text}</mark>`;
-
-    result = before + mark + after;
+    const { generateAnalyticsPage } = await import("./analytics-template");
+    const html = generateAnalyticsPage({
+      data: analytics,
+      config,
+      files,
+      clientScript,
+      showAllHistory,
+    });
+    sendResponse(res, 200, htmlHeaders(), html);
+  } catch (err) {
+    console.error("[analytics] Failed to generate analytics page:", err);
+    const errorHtml = generateErrorPage({
+      errorCode: 500,
+      message: "Failed to load analytics",
+      files,
+      config,
+      clientScript,
+    });
+    sendResponse(res, 500, htmlHeaders(), errorHtml);
   }
-
-  return result;
 };
 
-// Helper: parse JSON body from request
-const _parseJsonBody = (req: import("node:http").IncomingMessage): Promise<unknown> =>
-  new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk.toString();
+// Helper: serve the highlights page
+const handleHighlightsPage = async (params: {
+  url: URL;
+  config: Config;
+  files: MarkdownFile[];
+  clientScript: string;
+  res: ServerResponse;
+  eventService: EventService;
+}): Promise<void> => {
+  const { url, config, files, clientScript, res, eventService } = params;
+  try {
+    const requested = url.searchParams.get("directory") || config.directory;
+    const directory = resolveSafePath(config.directory, requested) ?? config.directory;
+
+    const { getHighlightsByDirectory } = await import("./highlights");
+    const highlights = getHighlightsByDirectory(eventService.getDatabase(), directory);
+
+    const { generateHighlightsPage } = await import("./highlights-template");
+    const html = generateHighlightsPage({ directory, config, files, clientScript, highlights });
+    sendResponse(res, 200, htmlHeaders(), html);
+  } catch (err) {
+    console.error("[highlights] Failed to generate highlights page:", err);
+    const errorHtml = generateErrorPage({
+      errorCode: 500,
+      message: "Failed to load highlights",
+      files,
+      config,
+      clientScript,
     });
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(body));
-      } catch (err) {
-        reject(err);
-      }
+    sendResponse(res, 500, htmlHeaders(), errorHtml);
+  }
+};
+
+// Helper: serve built-in static assets (client bundle, favicon). Returns true
+// when the request was handled.
+const serveStaticAsset = async (pathname: string, res: ServerResponse): Promise<boolean> => {
+  if (pathname === "/_client.js") {
+    const clientJs = await getClientScript();
+    if (clientJs) {
+      res.writeHead(200, {
+        "Content-Type": "application/javascript",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+      });
+      res.end(clientJs);
+    } else {
+      sendText(res, 404, "Client script not found");
+    }
+    return true;
+  }
+
+  if (pathname === "/_favicon") {
+    res.writeHead(200, {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "public, max-age=31536000, immutable",
     });
-    req.on("error", reject);
+    res.end(FAVICON_SVG);
+    return true;
+  }
+
+  return false;
+};
+
+// Context shared by every page/route handler for a single request.
+type RequestContext = {
+  config: Config;
+  files: MarkdownFile[];
+  clientScript: string;
+  eventService: EventService | null;
+};
+
+// Log markdown/home page requests (kept out of the hot dispatch path).
+const logPageRequest = (method: string | undefined, pathname: string): void => {
+  if (pathname === "/" || pathname.startsWith("/view/")) {
+    const timestamp = new Date().toISOString().split("T")[1]?.split(".")[0];
+    console.log(`[${timestamp}] ${method} ${pathname}`);
+  }
+};
+
+// Route a non-API, non-asset request to the correct page handler.
+const routePage = async (url: URL, res: ServerResponse, ctx: RequestContext): Promise<void> => {
+  const { config, files, clientScript, eventService } = ctx;
+  const pathname = url.pathname;
+
+  if (pathname === "/analytics" || pathname === "/highlights") {
+    if (!eventService) {
+      sendText(res, 501, "Events disabled");
+      return;
+    }
+    const params = { url, config, files, clientScript, res, eventService };
+    await (pathname === "/analytics" ? handleAnalyticsPage(params) : handleHighlightsPage(params));
+    return;
+  }
+
+  if (pathname === "/") {
+    sendResponse(res, 200, htmlHeaders(), generateIndexPage(files, config, clientScript));
+    return;
+  }
+
+  const viewPath = parseViewPath(pathname);
+  if (viewPath) {
+    await handleMarkdownView({ viewPath, config, files, clientScript, res, eventService });
+    return;
+  }
+
+  const notFoundHtml = generateErrorPage({
+    errorCode: 404,
+    message: "Page not found",
+    files,
+    config,
+    clientScript,
   });
+  sendResponse(res, 404, htmlHeaders(), notFoundHtml);
+};
 
 // Pure function: create request handler (returns handler with side effects)
 const createHandler = (
@@ -195,189 +347,34 @@ const createHandler = (
   clientScript: string,
   eventService: EventService | null
 ) => {
-  return async (
-    req: import("node:http").IncomingMessage,
-    res: import("node:http").ServerResponse
-  ): Promise<void> => {
+  const ctx: RequestContext = { config, files, clientScript, eventService };
+
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
-    const pathname = url.pathname;
+    logPageRequest(req.method, url.pathname);
 
-    // Log HTTP request (only for markdown files and home page)
-    const shouldLog = pathname === "/" || pathname.startsWith("/view/");
-    if (shouldLog) {
-      const timestamp = new Date().toISOString().split("T")[1]?.split(".")[0];
-      console.log(`[${timestamp}] ${req.method} ${pathname}`);
-    }
-
-    // API Routes - delegated to route handler
-    if (await handleApiRoute(req, res, pathname, url, config, eventService)) {
+    if (await handleApiRoute({ req, res, pathname: url.pathname, url, config, eventService })) {
       return;
     }
 
-    // Route: Client JavaScript bundle
-    if (pathname === "/_client.js") {
-      try {
-        const clientJs = await getClientScript();
-        res.writeHead(200, {
-          "Content-Type": "application/javascript",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-        });
-        res.end(clientJs);
-        return;
-      } catch {
-        sendResponse(res, 404, { "Content-Type": "text/plain" }, "Client script not found");
-        return;
-      }
-    }
-
-    // Route: Favicon
-    if (pathname === "/_favicon") {
-      try {
-        const favicon = await readFile("./src/favicon.svg", "utf-8");
-        res.writeHead(200, {
-          "Content-Type": "image/svg+xml",
-          "Cache-Control": "public, max-age=31536000, immutable",
-        });
-        res.end(favicon);
-        return;
-      } catch {
-        sendResponse(res, 404, { "Content-Type": "text/plain" }, "Favicon not found");
-        return;
-      }
-    }
-
-    // Route: Font files
-    if (pathname.startsWith("/_fonts/")) {
-      const fontPath = pathname.slice(8); // Remove "/_fonts/"
-      try {
-        const fontFile = await readFile(`./src/fonts/${fontPath}`);
-        res.writeHead(200, {
-          "Content-Type": "font/woff2",
-          "Cache-Control": "public, max-age=31536000, immutable",
-        });
-        res.end(fontFile);
-        return;
-      } catch {
-        sendResponse(res, 404, { "Content-Type": "text/plain" }, "Font not found");
-        return;
-      }
-    }
-
-    // Route: Analytics page
-    if (pathname === "/analytics") {
-      if (!eventService) {
-        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
-        return;
-      }
-
-      try {
-        const showAllHistory = url.searchParams.get("all") === "true";
-        const directory = showAllHistory
-          ? undefined
-          : url.searchParams.get("directory") || config.directory;
-
-        const analytics = await eventService.getAnalytics(directory);
-        const timeSeries = await eventService.getActivityTimeSeries(directory || null, 7);
-
-        // Merge timeSeries into analytics
-        analytics.timeSeries = timeSeries;
-
-        const { generateAnalyticsPage } = await import("./analytics-template");
-        const html = generateAnalyticsPage({
-          data: analytics,
-          config,
-          files,
-          clientScript,
-          showAllHistory,
-        });
-        sendResponse(res, 200, htmlHeaders(), html);
-        return;
-      } catch (err) {
-        console.error("[analytics] Failed to generate analytics page:", err);
-        const errorHtml = generateErrorPage({
-          errorCode: 500,
-          message: "Failed to load analytics",
-          files,
-          config,
-          clientScript,
-        });
-        sendResponse(res, 500, htmlHeaders(), errorHtml);
-        return;
-      }
-    }
-
-    // Route: Highlights page
-    if (pathname === "/highlights") {
-      if (!eventService) {
-        sendResponse(res, 501, { "Content-Type": "text/plain" }, "Events disabled");
-        return;
-      }
-
-      try {
-        const directory = url.searchParams.get("directory") || config.directory;
-        const { generateHighlightsPage } = await import("./highlights-template");
-        const db = eventService.getDatabase();
-        const html = generateHighlightsPage({
-          directory,
-          config,
-          files,
-          clientScript,
-          db,
-        });
-        sendResponse(res, 200, htmlHeaders(), html);
-        return;
-      } catch (err) {
-        console.error("[highlights] Failed to generate highlights page:", err);
-        const errorHtml = generateErrorPage({
-          errorCode: 500,
-          message: "Failed to load highlights",
-          files,
-          config,
-          clientScript,
-        });
-        sendResponse(res, 500, htmlHeaders(), errorHtml);
-        return;
-      }
-    }
-
-    // Route: Home page (directory index)
-    if (pathname === "/") {
-      const html = generateIndexPage(files, config, clientScript);
-      sendResponse(res, 200, htmlHeaders(), html);
+    if (await serveStaticAsset(url.pathname, res)) {
       return;
     }
 
-    // Route: View markdown file
-    const viewPath = parseViewPath(pathname);
-    if (viewPath) {
-      await handleMarkdownView({ viewPath, config, files, clientScript, res, eventService });
-      return;
-    }
-
-    // 404 for unknown routes
-    const notFoundHtml = generateErrorPage({
-      errorCode: 404,
-      message: "Page not found",
-      files,
-      config,
-      clientScript,
-    });
-    sendResponse(res, 404, htmlHeaders(), notFoundHtml);
+    await routePage(url, res, ctx);
   };
 };
 
 // WebSocket message handler
-const handleWebSocketMessage = (
-  ws: WebSocket & { file?: string },
-  message: Buffer,
-  config: Config
-) => {
+const handleWebSocketMessage = (ws: WatchSocket, message: Buffer, config: Config): void => {
   try {
     const data = JSON.parse(message.toString());
-
-    if (data.type === "watch" && data.file) {
-      // Start watching this file
-      ws.file = data.file;
+    if (data.type === "watch" && typeof data.file === "string") {
+      if (!ws.files) {
+        ws.files = new Set();
+      }
+      ws.files.add(data.file);
+      // biome-ignore lint/suspicious/noExplicitAny: ws subscriber compatibility
       watchFile(config.directory, data.file, ws as any);
     }
   } catch (err) {
@@ -385,80 +382,88 @@ const handleWebSocketMessage = (
   }
 };
 
+// Side effect: attach the WebSocket server for live reload
+const setupWebSocketServer = (
+  server: ReturnType<typeof createServer>,
+  config: Config
+): WebSocketServer => {
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
+    if (url.pathname === "/_ws") {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  wss.on("connection", (ws: WatchSocket) => {
+    console.log("[ws] Client connected");
+
+    ws.on("message", (message: Buffer) => {
+      handleWebSocketMessage(ws, message, config);
+    });
+
+    ws.on("close", () => {
+      console.log("[ws] Client disconnected");
+      // Stop watching every file this client subscribed to.
+      for (const file of ws.files ?? []) {
+        // biome-ignore lint/suspicious/noExplicitAny: ws subscriber compatibility
+        unwatchFile(file, ws as any);
+      }
+      ws.files?.clear();
+    });
+  });
+
+  return wss;
+};
+
 // Public function: start server
-export const startServer = async (config: Config, files: MarkdownFile[]) => {
+export const startServer = async (config: Config, files: MarkdownFile[]): Promise<ServerHandle> => {
   // Initialize event service
   const eventService = initEventService(config);
 
   // Record "open" event for root directory
-  if (eventService) {
-    eventService.recordEvent("open", config.directory, "dir");
-  }
+  eventService?.recordEvent("open", config.directory, "dir");
 
-  // Bundle client scripts once at startup
-  // Use external script tag if source maps are available (dev mode)
+  // Bundle client scripts once at startup.
+  // Use an external script tag if source maps are present (dev mode).
   const devMode = await hasSourceMaps();
   const clientScript = devMode ? getClientScriptTagExternal() : await getClientScriptTag();
 
   const server = createServer(createHandler(config, files, clientScript, eventService));
 
-  // Setup WebSocket server if watch is enabled
-  let wss: WebSocketServer | undefined;
-  if (config.watch) {
-    wss = new WebSocketServer({ noServer: true });
-
-    // Handle WebSocket upgrade
-    server.on("upgrade", (request, socket, head) => {
-      const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
-      if (url.pathname === "/_ws") {
-        wss?.handleUpgrade(request, socket, head, (ws) => {
-          wss?.emit("connection", ws, request);
-        });
-      } else {
-        socket.destroy();
-      }
-    });
-
-    wss.on("connection", (ws: WebSocket & { file?: string }) => {
-      console.log("[ws] Client connected");
-
-      ws.on("message", (message: Buffer) => {
-        handleWebSocketMessage(ws, message, config);
-      });
-
-      ws.on("close", () => {
-        console.log("[ws] Client disconnected");
-        // Stop watching all files for this client
-        if (ws.file) {
-          unwatchFile(ws.file, ws as any);
-        }
-      });
-    });
-  }
+  const wss = config.watch ? setupWebSocketServer(server, config) : undefined;
 
   // Start listening
   await new Promise<void>((resolve) => {
-    server.listen(config.port, "localhost", () => {
-      resolve();
-    });
+    server.listen(config.port, "localhost", resolve);
   });
 
   // Get actual assigned port (important when using port 0)
   const address = server.address();
   const actualPort = typeof address === "object" && address !== null ? address.port : config.port;
 
-  // Return server-like object with consistent API
   return {
     hostname: "localhost",
     port: actualPort,
-    stop: () => {
+    stop: async (): Promise<void> => {
       eventService?.close();
+      cleanupAllWatchers();
+      for (const client of wss?.clients ?? []) {
+        client.terminate();
+      }
       wss?.close();
-      server.close();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     },
   };
 };
 
 // Pure function: get URL for server
-export const getServerUrl = (server: Awaited<ReturnType<typeof startServer>>): string =>
+export const getServerUrl = (server: ServerHandle): string =>
   `http://${server.hostname}:${server.port}`;

@@ -59,20 +59,6 @@ Options:
   -h, --help               Show this help
 `;
 
-const HIGHLIGHTS_HELP = `
-llmd highlights - Manage highlights feature
-
-Usage:
-  llmd highlights [subcommand]
-
-Subcommands:
-  enable                   Enable highlights feature (default)
-  disable                  Disable highlights feature
-
-Options:
-  -h, --help               Show this help
-`;
-
 const EXPORT_HELP = `
 llmd export - Export highlights to markdown
 
@@ -101,7 +87,6 @@ Arguments:
 Commands:
   docs                     View llmd documentation
   analytics                Manage analytics tracking
-  highlights               Manage highlights feature
   db                       Manage database
   archive                  Manage highlight archive
   export                   Export highlights to markdown
@@ -143,18 +128,6 @@ const parseDbCommand = (
     return { subcommand: nextArg, nextIndex: index + 1 };
   }
   return { subcommand: "check", nextIndex: index };
-};
-
-// Helper: parse highlights command and subcommand
-const parseHighlightsCommand = (
-  args: string[],
-  index: number
-): { subcommand: "enable" | "disable"; nextIndex: number } => {
-  const nextArg = args[index + 1];
-  if (nextArg === "enable" || nextArg === "disable") {
-    return { subcommand: nextArg, nextIndex: index + 1 };
-  }
-  return { subcommand: "enable", nextIndex: index };
 };
 
 // Helper: parse archive command and subcommand
@@ -209,13 +182,14 @@ const parseBooleanFlag = (arg: string, flags: ParsedArgs["flags"]): boolean => {
   return false;
 };
 
-// Helper: parse flags with values
-const parseValueFlag = (
+// Helper: parse option flags that take a value. Returns the new arg index, or
+// null when `arg` is not a recognized option.
+const parseOptionFlag = (
   arg: string,
   args: string[],
   index: number,
   flags: ParsedArgs["flags"]
-): number => {
+): number | null => {
   if (arg === "-p" || arg === "--port") {
     flags.port = Number.parseInt(args[index + 1] ?? "0", 10);
     return index + 1;
@@ -228,16 +202,26 @@ const parseValueFlag = (
     flags.treeDepth = Number.parseInt(args[index + 1] ?? "5", 10);
     return index + 1;
   }
+  if (arg === "--days") {
+    const daysValue = Number.parseInt(args[index + 1] ?? "30", 10);
+    flags.days = Number.isNaN(daysValue) ? 30 : daysValue;
+    return index + 1;
+  }
+  return null;
+};
+
+// Helper: parse subcommands. Returns the new arg index, or null when `arg` is
+// not a recognized command.
+const parseCommandFlag = (
+  arg: string,
+  args: string[],
+  index: number,
+  flags: ParsedArgs["flags"]
+): number | null => {
   if (arg === "analytics") {
     flags.analytics = true;
     const { subcommand, nextIndex } = parseAnalyticsCommand(args, index);
     flags.analyticsSubcommand = subcommand;
-    return nextIndex;
-  }
-  if (arg === "highlights") {
-    flags.highlights = true;
-    const { subcommand, nextIndex } = parseHighlightsCommand(args, index);
-    flags.highlightsSubcommand = subcommand;
     return nextIndex;
   }
   if (arg === "db") {
@@ -263,12 +247,22 @@ const parseValueFlag = (
     }
     return index;
   }
-  if (arg === "--days") {
-    const daysValue = Number.parseInt(args[index + 1] ?? "30", 10);
-    flags.days = Number.isNaN(daysValue) ? 30 : daysValue;
-    return index + 1;
+  return null;
+};
+
+// Helper: parse flags with values (options + commands)
+const parseValueFlag = (
+  arg: string,
+  args: string[],
+  index: number,
+  flags: ParsedArgs["flags"]
+): number => {
+  const option = parseOptionFlag(arg, args, index, flags);
+  if (option !== null) {
+    return option;
   }
-  return index;
+  const command = parseCommandFlag(arg, args, index, flags);
+  return command ?? index;
 };
 
 // Pure function: parse raw CLI arguments
@@ -350,18 +344,35 @@ export const validateConfig = (config: Config): void => {
     throw new Error(`Theme "${config.theme}" not found. Available themes: ${available.join(", ")}`);
   }
 
-  if (config.port < 0 || config.port > 65_535) {
-    throw new Error(`Invalid port: ${config.port}. Must be 0-65535`);
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65_535) {
+    throw new Error(`Invalid port: ${config.port}. Must be an integer 0-65535`);
   }
 
-  if (config.treeDepth < 1 || config.treeDepth > 20) {
-    throw new Error(`Invalid tree depth: ${config.treeDepth}. Must be 1-20`);
+  if (!Number.isInteger(config.treeDepth) || config.treeDepth < 1 || config.treeDepth > 20) {
+    throw new Error(`Invalid tree depth: ${config.treeDepth}. Must be an integer 1-20`);
   }
 };
 
+// Pure function: resolve the help text for the requested command (or general help)
+const resolveHelpText = (flags: ParsedArgs["flags"]): string => {
+  if (flags.analytics) {
+    return ANALYTICS_HELP;
+  }
+  if (flags.db) {
+    return DB_HELP;
+  }
+  if (flags.archive) {
+    return ARCHIVE_HELP;
+  }
+  if (flags.export) {
+    return EXPORT_HELP;
+  }
+  return HELP_TEXT;
+};
+
 // Side effect functions: print to stdout
-export const printHelp = (): void => {
-  console.log(HELP_TEXT);
+export const printHelp = (text: string = HELP_TEXT): void => {
+  console.log(text);
 };
 
 export const printVersion = (): void => {
@@ -390,14 +401,6 @@ const handleDbCommand = (subcommand: "check" | "cleanup" | "clear", days?: numbe
   return { type: "db-clear" };
 };
 
-// Helper: handle highlights command results
-const handleHighlightsCommand = (subcommand: "enable" | "disable"): CliResult => {
-  if (subcommand === "enable") {
-    return { type: "highlights-enable" };
-  }
-  return { type: "highlights-disable" };
-};
-
 // Helper: handle archive command results
 const handleArchiveCommand = (subcommand: "list" | "show" | "clear", path?: string): CliResult => {
   if (subcommand === "list") {
@@ -416,9 +419,9 @@ const handleArchiveCommand = (subcommand: "list" | "show" | "clear", path?: stri
 export const parseCli = (args: string[]): CliResult => {
   const parsed = parseArgs(args);
 
-  // Early exits for help/version
+  // Early exits for help/version (help resolves to command-specific text)
   if (parsed.flags.help) {
-    printHelp();
+    printHelp(resolveHelpText(parsed.flags));
     return { type: "exit" };
   }
   if (parsed.flags.version) {
@@ -436,10 +439,6 @@ export const parseCli = (args: string[]): CliResult => {
     if (result) {
       return result;
     }
-  }
-
-  if (parsed.flags.highlights && parsed.flags.highlightsSubcommand) {
-    return handleHighlightsCommand(parsed.flags.highlightsSubcommand);
   }
 
   if (parsed.flags.db && parsed.flags.dbSubcommand) {

@@ -17,6 +17,7 @@ const createTestConfig = (directory: string): Config => ({
   theme: "dark",
   open: false,
   watch: false,
+  treeDepth: 5,
 });
 
 // Helper: setup test directory with markdown files
@@ -59,7 +60,7 @@ describe("Server - Event Tracking", () => {
       html: "<p>Test content</p>",
       toc: "",
       fileName: "guide.md",
-      files: [{ path: "docs/guide.md", name: "guide.md", depth: 1 }],
+      files: [{ path: "docs/guide.md", name: "guide.md", depth: 1, sizeBytes: 6 }],
       config,
       currentPath: "docs/guide.md",
       clientScript: "",

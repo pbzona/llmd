@@ -1,18 +1,23 @@
 // Client-side: File watching with WebSocket auto-reload
 
-const connectFileWatcher = (currentFile: string) => {
+const BASE_RECONNECT_DELAY = 1000; // ms
+const MAX_RECONNECT_DELAY = 30_000; // ms
+
+const connectFileWatcher = (currentFile: string): void => {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/_ws`;
 
   let ws: WebSocket | null = null;
   let reconnectTimeout: number | null = null;
+  let attempts = 0;
+  let closedByUnload = false;
 
-  const connect = () => {
+  const connect = (): void => {
     ws = new WebSocket(wsUrl);
 
     ws.addEventListener("open", () => {
+      attempts = 0;
       console.log("[llmd] Connected to file watcher");
-      // Send current file path
       ws?.send(JSON.stringify({ type: "watch", file: currentFile }));
     });
 
@@ -29,25 +34,25 @@ const connectFileWatcher = (currentFile: string) => {
     });
 
     ws.addEventListener("close", () => {
-      console.log("[llmd] Disconnected from file watcher");
-      // Auto-reconnect after 2 seconds
-      reconnectTimeout = window.setTimeout(() => {
-        console.log("[llmd] Reconnecting...");
-        connect();
-      }, 2000);
+      if (closedByUnload) {
+        return;
+      }
+      // Capped exponential backoff so a downed server does not busy-loop.
+      const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * 2 ** attempts);
+      attempts += 1;
+      reconnectTimeout = window.setTimeout(connect, delay);
     });
 
-    ws.addEventListener("error", (err) => {
-      console.error("[llmd] WebSocket error:", err);
-      ws?.close();
+    ws.addEventListener("error", () => {
+      // The browser fires "close" after "error"; reconnection is handled there.
+      console.error("[llmd] WebSocket error");
     });
   };
 
-  // Initial connection
   connect();
 
-  // Cleanup on page unload
   window.addEventListener("beforeunload", () => {
+    closedByUnload = true;
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
     }
@@ -55,6 +60,10 @@ const connectFileWatcher = (currentFile: string) => {
   });
 };
 
-// Export for use in template
-// biome-ignore lint/suspicious/noExplicitAny: Need to extend window global
-(window as any).connectFileWatcher = connectFileWatcher;
+// Initialize the file watcher from the <body data-watch-file="..."> attribute.
+export const initFileWatcher = (): void => {
+  const currentFile = document.body?.dataset.watchFile;
+  if (currentFile) {
+    connectFileWatcher(currentFile);
+  }
+};

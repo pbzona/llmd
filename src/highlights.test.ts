@@ -7,7 +7,6 @@ import {
   computeFileHash,
   createHighlight,
   deleteHighlight,
-  deleteInvalidHighlights,
   directoryHasHighlights,
   extractTextByOffset,
   findTextOffset,
@@ -17,8 +16,8 @@ import {
   getResourceByPath,
   initializeHighlightsSchema,
   markHighlightStale,
+  markStaleHighlights,
   resolveCacheDirectory,
-  restoreFile,
   updateHighlight,
   updateResourceBackup,
   validateHighlight,
@@ -389,21 +388,26 @@ describe("database operations", () => {
       contentHash: "hash1",
     });
 
-    deleteHighlight(db, highlightId);
+    const deleted = deleteHighlight(db, highlightId);
+    expect(deleted).toBe(1);
 
     const highlights = getHighlightsByResource(db, "resource-1");
     expect(highlights).toHaveLength(0);
   });
 
-  test("deleteInvalidHighlights removes highlights where text no longer exists", () => {
+  test("deleteHighlight returns 0 when the highlight does not exist", () => {
+    const db = createTestDatabase();
+    expect(deleteHighlight(db, "does-not-exist")).toBe(0);
+  });
+
+  test("markStaleHighlights flags highlights when file content changed (non-destructive)", () => {
     const db = createTestDatabase();
     insertTestResource(db, "resource-1", "/test/file.md", "file");
 
     const content = "Hello world, this is a test document.";
     const hash = computeFileHash(content);
 
-    // Create highlight for text that exists
-    const validId = createHighlight({
+    const id = createHighlight({
       db,
       resourceId: "resource-1",
       startOffset: 0,
@@ -412,26 +416,21 @@ describe("database operations", () => {
       contentHash: hash,
     });
 
-    // Create highlight for text that will be removed
-    const invalidId = createHighlight({
-      db,
-      resourceId: "resource-1",
-      startOffset: 20,
-      endOffset: 24,
-      highlightedText: "test",
-      contentHash: hash,
-    });
+    // Same content: nothing changes.
+    expect(markStaleHighlights(db, "resource-1", content)).toBe(0);
+    expect(getHighlightsByResource(db, "resource-1")[0]?.isStale).toBe(false);
 
-    // New content without "test" but with "Hello world"
-    const newContent = "Hello world, this is a document.";
-
-    const deletedCount = deleteInvalidHighlights(db, "resource-1", newContent);
-
-    expect(deletedCount).toBe(1);
+    // Changed content: highlight is marked stale, not deleted.
+    const changedContent = `${content} An edit was made.`;
+    expect(markStaleHighlights(db, "resource-1", changedContent)).toBe(1);
 
     const highlights = getHighlightsByResource(db, "resource-1");
     expect(highlights).toHaveLength(1);
-    expect(highlights[0]?.id).toBe(validId);
+    expect(highlights[0]?.id).toBe(id);
+    expect(highlights[0]?.isStale).toBe(true);
+
+    // Idempotent: already-stale highlights are not re-counted.
+    expect(markStaleHighlights(db, "resource-1", changedContent)).toBe(0);
   });
 
   test("updateResourceBackup updates resource with hash and backup path", () => {
@@ -484,74 +483,6 @@ describe("file operations", () => {
       expect(backupPath).toContain("resource-123");
       expect(backupPath).toContain("1234567890");
       expect(backupPath).toContain("test.md");
-    } finally {
-      rmSync(testDir, { recursive: true, force: true });
-    }
-  });
-
-  test("restoreFile replaces original file when useTimestamp is false", () => {
-    const testDir = join(tmpdir(), `llmd-test-${Date.now()}`);
-    const originalFile = join(testDir, "original.md");
-    const backupFile = join(testDir, "backup.md");
-
-    try {
-      mkdirSync(testDir, { recursive: true });
-      writeFileSync(originalFile, "Modified content");
-      writeFileSync(backupFile, "Original content");
-
-      const restoredPath = restoreFile({
-        backupPath: backupFile,
-        originalPath: originalFile,
-        useTimestamp: false,
-        timestamp: Date.now(),
-      });
-
-      expect(restoredPath).toBe(originalFile);
-    } finally {
-      rmSync(testDir, { recursive: true, force: true });
-    }
-  });
-
-  test("restoreFile creates timestamped copy when useTimestamp is true", () => {
-    const testDir = join(tmpdir(), `llmd-test-${Date.now()}`);
-    const originalFile = join(testDir, "original.md");
-    const backupFile = join(testDir, "backup.md");
-
-    try {
-      mkdirSync(testDir, { recursive: true });
-      writeFileSync(originalFile, "Modified content");
-      writeFileSync(backupFile, "Original content");
-
-      const timestamp = Date.now();
-      const restoredPath = restoreFile({
-        backupPath: backupFile,
-        originalPath: originalFile,
-        useTimestamp: true,
-        timestamp,
-      });
-
-      expect(restoredPath).not.toBe(originalFile);
-      expect(restoredPath).toContain("original_");
-      expect(restoredPath).toContain(".md");
-    } finally {
-      rmSync(testDir, { recursive: true, force: true });
-    }
-  });
-
-  test("restoreFile throws error when backup doesn't exist", () => {
-    const testDir = join(tmpdir(), `llmd-test-${Date.now()}`);
-    const nonExistentBackup = join(testDir, "nonexistent.md");
-    const originalFile = join(testDir, "original.md");
-
-    try {
-      expect(() => {
-        restoreFile({
-          backupPath: nonExistentBackup,
-          originalPath: originalFile,
-          useTimestamp: false,
-          timestamp: Date.now(),
-        });
-      }).toThrow("Backup file not found");
     } finally {
       rmSync(testDir, { recursive: true, force: true });
     }

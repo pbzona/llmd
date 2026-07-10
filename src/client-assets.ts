@@ -4,24 +4,36 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Cache directory path and client script
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let clientScriptCache: string | null = null;
+
+// Candidate locations for the pre-built client bundle:
+// 1. Alongside this module (production: dist/llmd next to dist/client.js).
+// 2. In ../dist (development: running from source with bun index.ts).
+const candidateBundlePaths = (): string[] => [
+  join(__dirname, "client.js"),
+  join(__dirname, "..", "dist", "client.js"),
+];
 
 export const getClientScript = async (): Promise<string> => {
   if (clientScriptCache) {
     return clientScriptCache;
   }
 
-  try {
-    // Read pre-built client bundle from dist/
-    const clientPath = join(__dirname, "client.js");
-    clientScriptCache = await readFile(clientPath, "utf-8");
-    return clientScriptCache;
-  } catch (error) {
-    console.error("Failed to load client bundle:", error);
-    return "";
+  for (const bundlePath of candidateBundlePaths()) {
+    try {
+      const content = await readFile(bundlePath, "utf-8");
+      clientScriptCache = content;
+      return content;
+    } catch {
+      // Try the next candidate path.
+    }
   }
+
+  console.error(
+    "[llmd] Client bundle not found. Run `bun run build` (or bash scripts/build-dev.sh) to generate dist/client.js."
+  );
+  return "";
 };
 
 // Check if bundle has inline source maps (for dev mode detection)

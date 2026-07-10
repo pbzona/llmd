@@ -11,6 +11,7 @@ llmd
 llmd.map
 *.tmp
 *.tmp.map
+*.bak
 test-output.*
 
 # preview generation

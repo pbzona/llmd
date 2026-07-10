@@ -4,8 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-
-const MD_EXTENSION_REGEX = /\.md$/;
+import type { DatabaseHandle } from "./types";
 
 // Pure function: generate UUID v4
 const generateId = (): string => randomUUID();
@@ -47,42 +46,6 @@ export const backupFile = (filePath: string, resourceId: string, timestamp: numb
   return backupPath;
 };
 
-// Side effect: restore file from backup
-// Parameters:
-//   backupPath: path to backup file
-//   originalPath: original file path
-//   useTimestamp: if true, create timestamped copy; if false, replace original
-//   timestamp: timestamp to use in filename
-export const restoreFile = (params: {
-  backupPath: string;
-  originalPath: string;
-  useTimestamp: boolean;
-  timestamp: number;
-}): string => {
-  if (!existsSync(params.backupPath)) {
-    throw new Error(`Backup file not found: ${params.backupPath}`);
-  }
-
-  let targetPath = params.originalPath;
-
-  if (params.useTimestamp) {
-    const dirPath = dirname(params.originalPath);
-    const fileName = basename(params.originalPath);
-    const nameWithoutExt = fileName.replace(MD_EXTENSION_REGEX, "");
-    const timestampStr = new Date(params.timestamp).toISOString().replace(/[:.]/g, "-");
-    targetPath = join(dirPath, `${nameWithoutExt}_${timestampStr}.md`);
-  }
-
-  // Ensure target directory exists
-  const targetDir = dirname(targetPath);
-  if (!existsSync(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
-
-  copyFileSync(params.backupPath, targetPath);
-
-  return targetPath;
-};
 // Regex for whitespace normalization
 const WHITESPACE_REGEX = /\s+/g;
 
@@ -202,8 +165,7 @@ export const validateHighlight = (params: {
 };
 
 // Side effect: initialize highlights schema in database
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-export const initializeHighlightsSchema = (db: any): void => {
+export const initializeHighlightsSchema = (db: DatabaseHandle): void => {
   // Add content_hash and backup_path columns to resources table if they don't exist
   try {
     db.exec(`
@@ -255,10 +217,20 @@ export const initializeHighlightsSchema = (db: any): void => {
 // Pure function: get directory path from file path
 export const getDirectoryPath = (filePath: string): string => dirname(filePath);
 
+// Pure function: escape LIKE wildcards so a directory path is matched literally
+const escapeLike = (value: string): string => value.replace(/[\\%_]/g, (char) => `\\${char}`);
+
+// Pure function: build a [equalsParam, likeParam] pair matching a directory and
+// everything beneath it, without prefix-collision (e.g. /docs vs /docs2).
+const directoryMatchParams = (directoryPath: string): [string, string] => [
+  directoryPath,
+  `${escapeLike(directoryPath)}/%`,
+];
+
 // Side effect: create highlight in database
 // Parameters: db, resource metadata, offsets, text, hash, optional notes
 export const createHighlight = (params: {
-  db: any;
+  db: DatabaseHandle;
   resourceId: string;
   startOffset: number;
   endOffset: number;
@@ -293,9 +265,8 @@ export const createHighlight = (params: {
 };
 
 // Side effect: get highlights for a resource
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const getHighlightsByResource = (
-  db: any,
+  db: DatabaseHandle,
   resourceId: string
 ): Array<{
   id: string;
@@ -343,9 +314,8 @@ export const getHighlightsByResource = (
 };
 
 // Side effect: get highlights for a directory
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const getHighlightsByDirectory = (
-  db: any,
+  db: DatabaseHandle,
   directoryPath: string
 ): Array<{
   id: string;
@@ -367,11 +337,11 @@ export const getHighlightsByDirectory = (
       h.content_hash, h.is_stale, h.notes, h.created_at, h.updated_at
     FROM highlights h
     JOIN resources r ON h.resource_id = r.id
-    WHERE r.path LIKE ?
+    WHERE r.path = ? OR r.path LIKE ? ESCAPE '\\'
     ORDER BY h.created_at DESC
   `);
 
-  const results = stmt.all(`${directoryPath}%`) as Array<{
+  const results = stmt.all(...directoryMatchParams(directoryPath)) as Array<{
     id: string;
     resource_id: string;
     resource_path: string;
@@ -401,8 +371,7 @@ export const getHighlightsByDirectory = (
 };
 
 // Side effect: mark highlight as stale
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-export const markHighlightStale = (db: any, highlightId: string): void => {
+export const markHighlightStale = (db: DatabaseHandle, highlightId: string): void => {
   const stmt = db.prepare(`
     UPDATE highlights 
     SET is_stale = 1, updated_at = ?
@@ -414,9 +383,8 @@ export const markHighlightStale = (db: any, highlightId: string): void => {
 
 // Side effect: update highlight offsets and hash
 // Parameters: db, highlight ID, new offsets, new hash
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const updateHighlight = (params: {
-  db: any;
+  db: DatabaseHandle;
   highlightId: string;
   startOffset: number;
   endOffset: number;
@@ -438,48 +406,40 @@ export const updateHighlight = (params: {
   );
 };
 
-// Side effect: delete highlight
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-export const deleteHighlight = (db: any, highlightId: string): void => {
+// Side effect: delete highlight. Returns the number of rows deleted.
+export const deleteHighlight = (db: DatabaseHandle, highlightId: string): number => {
   const stmt = db.prepare("DELETE FROM highlights WHERE id = ?");
-  stmt.run(highlightId);
+  const result = stmt.run(highlightId);
+  return result?.changes ?? 0;
 };
 
-// Side effect: delete highlights where text no longer exists in document
-// Returns count of deleted highlights
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-export const deleteInvalidHighlights = (
-  db: any,
+// Side effect: mark highlights stale when the file content no longer matches
+// the content they were created against. Non-destructive: never deletes data.
+// Returns the count of highlights newly marked stale.
+export const markStaleHighlights = (
+  db: DatabaseHandle,
   resourceId: string,
   fileContent: string
 ): number => {
+  const currentHash = computeFileHash(fileContent);
   const highlights = getHighlightsByResource(db, resourceId);
-  let deletedCount = 0;
+  let staleCount = 0;
 
   for (const highlight of highlights) {
-    // Check if the highlighted text still exists in the document
-    const validation = validateHighlight({
-      content: fileContent,
-      contentHash: highlight.contentHash,
-      startOffset: highlight.startOffset,
-      endOffset: highlight.endOffset,
-      highlightedText: highlight.highlightedText,
-    });
-
-    // If text is not found in the document, delete the highlight
-    if (!validation.isValid) {
-      deleteHighlight(db, highlight.id);
-      deletedCount += 1;
+    // A highlight only renders reliably when the file is byte-identical to
+    // its creation snapshot; any change flags it stale (no offset drift).
+    if (!highlight.isStale && highlight.contentHash !== currentHash) {
+      markHighlightStale(db, highlight.id);
+      staleCount += 1;
     }
   }
 
-  return deletedCount;
+  return staleCount;
 };
 
 // Side effect: update resource with content hash and backup path
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const updateResourceBackup = (
-  db: any,
+  db: DatabaseHandle,
   resourceId: string,
   contentHash: string,
   backupPath: string
@@ -494,9 +454,8 @@ export const updateResourceBackup = (
 };
 
 // Side effect: get resource by path
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
 export const getResourceByPath = (
-  db: any,
+  db: DatabaseHandle,
   path: string
 ): {
   id: string;
@@ -538,16 +497,15 @@ export const getResourceByPath = (
 };
 
 // Side effect: check if directory has highlights
-// biome-ignore lint/suspicious/noExplicitAny: Runtime compatibility layer
-export const directoryHasHighlights = (db: any, directoryPath: string): boolean => {
+export const directoryHasHighlights = (db: DatabaseHandle, directoryPath: string): boolean => {
   const stmt = db.prepare(`
     SELECT COUNT(*) as count
     FROM highlights h
     JOIN resources r ON h.resource_id = r.id
-    WHERE r.path LIKE ?
+    WHERE r.path = ? OR r.path LIKE ? ESCAPE '\\'
   `);
 
-  const result = stmt.get(`${directoryPath}%`) as { count: number };
+  const result = stmt.get(...directoryMatchParams(directoryPath)) as { count: number };
   return result.count > 0;
 };
 

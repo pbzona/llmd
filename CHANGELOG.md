@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-10
+
+### Security
+- Constrain all file-path inputs (`/view/*`, `/api/markdown/raw`, highlight
+  create) to the served directory, rejecting absolute paths and `..` traversal
+- Validate `Host`/`Origin` on every `/api/*` request (localhost-only) to guard
+  against DNS-rebinding and cross-origin/CSRF requests
+- Escape all interpolated user/filesystem-derived values in server-rendered
+  HTML and inline scripts (stored-XSS fix in the highlights UI)
+
+### Fixed
+- Highlights could not be deleted from the UI and restore never worked, due to
+  an off-by-one when parsing the highlight ID from the request path
+- Reads (page views and highlight fetches) no longer delete highlights; a
+  changed file marks its highlights stale instead (non-destructive)
+- Markdown views now URL-decode paths, so files with spaces/non-ASCII names load
+- Table-of-contents anchors now match heading element ids for headings with
+  inline formatting, and duplicate headings get unique ids
+- Empty markdown files render instead of returning 404
+- `--port`/`--tree-depth` reject non-integer values instead of crashing
+- Dev mode (`bun index.ts`) now finds and serves the client bundle
+- Live reload survives editor atomic-saves (`rename` events) and reconnects with
+  capped backoff; watchers/sockets are cleaned up on shutdown
+
+### Changed
+- Split shared HTTP/escaping/path logic into `http-utils.ts` and `escape.ts`
+- Highlights page and markdown decoration no longer access the database directly
+- Analytics resource scan now respects `--tree-depth`
+- `check` script and the build now run `tsc --noEmit`; the project typechecks
+  cleanly and passes the linter with zero errors
+
+### Removed
+- Half-wired features: `llmd highlights enable/disable`, sidebar highlight
+  indicators, and the highlight export/restore HTTP endpoints + restore UI
+- Dead code: orphaned client highlight renderer, stale `.bak` file, unused
+  `figlet`/`fast-glob` dependencies, and duplicated helpers
+
 ## [0.5.0] - 2026-01-15
 
 ### Added

@@ -3,8 +3,11 @@
 
 set -e
 
+echo "Type checking..."
+bun x tsc --noEmit
+
 echo "Cleaning previous builds..."
-rm -f dist/llmd dist/llmd.js* llmd.js* dist/client.js
+rm -rf dist llmd.js*
 
 echo "Creating dist directory..."
 mkdir -p dist
