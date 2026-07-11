@@ -92,6 +92,27 @@ export const renderMarkdown = (markdown: string): string => {
   return html;
 };
 
+// Pure function: decode the HTML entities marked emits (named + numeric).
+const decodeHtmlEntities = (html: string): string =>
+  html
+    .replace(/&#(\d+);/g, (_m, dec) => String.fromCodePoint(Number.parseInt(dec, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+
+const HTML_TAG_STRIP_REGEX = /<[^>]+>/g;
+
+// Pure function: extract the rendered plain text of a markdown document.
+// This approximates the text content of the rendered `.markdown-body` element
+// and is the coordinate space that highlight anchors resolve against.
+export const extractPlainText = (markdown: string): string => {
+  const html = renderMarkdown(markdown);
+  return decodeHtmlEntities(html.replace(HTML_TAG_STRIP_REGEX, ""));
+};
+
 // Pure function: convert inline backtick code to <code> tags
 const renderInlineCode = (text: string): string => text.replace(/`([^`]+)`/g, "<code>$1</code>");
 

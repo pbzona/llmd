@@ -109,7 +109,12 @@ describe("Highlights API", () => {
     const create = await fetch(`${baseUrl}/api/highlights`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resourcePath: "readme.md", highlightedText: "brown fox" }),
+      body: JSON.stringify({
+        resourcePath: "readme.md",
+        exact: "brown fox",
+        prefix: "quick ",
+        suffix: ".",
+      }),
     });
     expect(create.status).toBe(201);
     const { id } = (await create.json()) as { id: string };

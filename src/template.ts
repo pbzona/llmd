@@ -983,7 +983,9 @@ export const generateMarkdownPage = (options: MarkdownPageOptions): string => {
   </div>
   <div class="content">
     ${toc}
+    <div class="markdown-body">
     ${html}
+    </div>
   </div>`;
 
   // Add event tracking script (send absolute path)

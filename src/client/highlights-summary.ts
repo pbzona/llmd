@@ -1,16 +1,15 @@
-// Client-side highlights summary for markdown pages
+// Client-side highlights summary rendered on markdown pages.
 
-import { scrollToHighlight } from "./highlight-renderer";
+import { getAnnotationRoot, scrollToHighlight } from "./highlight-renderer";
 
-type SummaryHighlight = {
+export type SummaryHighlight = {
   id: string;
-  highlightedText: string;
-  isStale: boolean;
+  exact: string;
   notes: string | null;
   createdAt: number;
+  isStale: boolean;
 };
 
-// Helper: format date
 const formatDate = (timestamp: number): string => {
   const date = new Date(timestamp);
   return date.toLocaleString("en-US", {
@@ -21,7 +20,6 @@ const formatDate = (timestamp: number): string => {
   });
 };
 
-// Pure function: truncate text to max length
 const truncateText = (text: string, maxLength: number): string =>
   text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 
@@ -44,7 +42,7 @@ const buildSummaryItem = (h: SummaryHighlight): HTMLLIElement => {
   if (h.isStale) {
     preview.style.cssText = "text-decoration: line-through; opacity: 0.5;";
   }
-  preview.textContent = truncateText(h.highlightedText, 80);
+  preview.textContent = truncateText(h.exact, 80);
   li.appendChild(preview);
 
   if (h.notes) {
@@ -63,8 +61,20 @@ const buildSummaryItem = (h: SummaryHighlight): HTMLLIElement => {
   return li;
 };
 
-// Build the summary container for the given highlights.
-const buildSummary = (highlights: SummaryHighlight[]): HTMLElement => {
+// Render (or re-render) the highlights summary box above the document body.
+export const renderHighlightsSummary = (highlights: SummaryHighlight[]): void => {
+  const root = getAnnotationRoot();
+  if (!root) {
+    return;
+  }
+
+  // Remove any previous summary so repeated renders don't stack.
+  root.parentElement?.querySelector(".highlights-summary")?.remove();
+
+  if (highlights.length === 0) {
+    return;
+  }
+
   const summary = document.createElement("div");
   summary.className = "highlights-summary";
 
@@ -97,42 +107,7 @@ const buildSummary = (highlights: SummaryHighlight[]): HTMLElement => {
   box.appendChild(footer);
 
   summary.appendChild(box);
-  return summary;
-};
 
-// Initialize highlights summary
-export const initHighlightsSummary = (): void => {
-  const contentArea = document.querySelector(".content");
-  if (!contentArea) {
-    return;
-  }
-
-  const pathname = window.location.pathname;
-  if (!pathname.startsWith("/view/")) {
-    return;
-  }
-
-  const filePath = pathname.slice(6); // Remove "/view/"
-
-  fetch(`/api/highlights/resource?path=${encodeURIComponent(filePath)}`)
-    .then((res) => res.json())
-    .then((data) => {
-      const highlights: SummaryHighlight[] = data.highlights || [];
-      if (highlights.length === 0) {
-        return;
-      }
-
-      const summary = buildSummary(highlights);
-
-      // Insert summary before the first heading or at the start of content.
-      const firstHeading = contentArea.querySelector("h1, h2");
-      if (firstHeading) {
-        firstHeading.parentNode?.insertBefore(summary, firstHeading);
-      } else {
-        contentArea.insertBefore(summary, contentArea.firstChild);
-      }
-    })
-    .catch((err) => {
-      console.error("Failed to load highlights summary:", err);
-    });
+  // Insert the summary just before the rendered document body.
+  root.parentElement?.insertBefore(summary, root);
 };

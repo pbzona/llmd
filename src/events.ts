@@ -64,6 +64,14 @@ const generateId = (): string => randomUUID();
 const initializeDatabase = (db: DatabaseHandle): void => {
   // Enable foreign keys (use exec for Bun compatibility)
   db.exec("PRAGMA foreign_keys = ON");
+  // WAL + a busy timeout so concurrent llmd instances don't throw SQLITE_BUSY.
+  // (No-ops for in-memory databases.)
+  try {
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA busy_timeout = 5000");
+  } catch {
+    // Some drivers/backends may not support these; safe to ignore.
+  }
 
   // Create resources table
   db.exec(`

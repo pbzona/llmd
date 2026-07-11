@@ -8,7 +8,7 @@ import type { Config, MarkdownFile } from "./types";
 export type HighlightView = {
   id: string;
   resourcePath: string;
-  highlightedText: string;
+  exact: string;
   isStale: boolean;
   notes: string | null;
   createdAt: number;
@@ -85,7 +85,7 @@ const renderHighlightCard = (h: HighlightView, directory: string): string => {
         </div>
       </div>
       <div style="padding: 16px; background: var(--bg); border-left: 3px solid var(--accent); border-radius: 4px; font-size: 14px; line-height: 1.6;">
-        ${escapeHtml(h.highlightedText)}
+        ${escapeHtml(h.exact)}
       </div>
       ${notesBlock}
       ${staleWarning}

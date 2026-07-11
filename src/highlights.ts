@@ -46,171 +46,56 @@ export const backupFile = (filePath: string, resourceId: string, timestamp: numb
   return backupPath;
 };
 
-// Regex for whitespace normalization
-const WHITESPACE_REGEX = /\s+/g;
+// Current highlights schema version. Bump this when the highlights table
+// shape changes; the migration below recreates the table (highlight data is
+// disposable across the anchor-model rewrite).
+const HIGHLIGHTS_SCHEMA_VERSION = 2;
 
-// Pure function: normalize whitespace for comparison
-// Collapses multiple spaces/newlines to single space, trims
-const normalizeWhitespace = (text: string): string => text.replace(WHITESPACE_REGEX, " ").trim();
-
-// Pure function: find all occurrences of text in content
-// Returns array of start offsets
-export const findAllOccurrences = (content: string, searchText: string): number[] => {
-  const occurrences: number[] = [];
-
-  // First try exact match
-  let searchStart = 0;
-  while (searchStart < content.length) {
-    const found = content.indexOf(searchText, searchStart);
-    if (found === -1) {
-      break;
-    }
-    occurrences.push(found);
-    searchStart = found + 1;
-  }
-
-  // If exact matches found, return those
-  if (occurrences.length > 0) {
-    return occurrences;
-  }
-
-  // Otherwise try with whitespace normalization
-  // This is more expensive so only do it as fallback
-  const normalizedSearch = normalizeWhitespace(searchText);
-  const normalizedContent = normalizeWhitespace(content);
-
-  searchStart = 0;
-  while (searchStart < normalizedContent.length) {
-    const found = normalizedContent.indexOf(normalizedSearch, searchStart);
-    if (found === -1) {
-      break;
-    }
-
-    // Map normalized offset back to original content offset
-    // This is approximate - just mark it for stale detection
-    occurrences.push(found);
-    searchStart = found + 1;
-  }
-
-  return occurrences;
-};
-
-// Pure function: find text in content and return offset
-// Now supports occurrence index for disambiguating multiple matches
-export const findTextOffset = (
-  content: string,
-  searchText: string,
-  occurrenceIndex = 0
-): { startOffset: number; endOffset: number } | null => {
-  const occurrences = findAllOccurrences(content, searchText);
-
-  if (occurrences.length === 0) {
-    return null; // Not found
-  }
-
-  if (occurrenceIndex >= occurrences.length) {
-    return null; // Index out of bounds
-  }
-
-  const startOffset = occurrences[occurrenceIndex] ?? 0;
-  return {
-    startOffset,
-    endOffset: startOffset + searchText.length,
-  };
-};
-
-// Pure function: extract text from content using offsets
-export const extractTextByOffset = (
-  content: string,
-  startOffset: number,
-  endOffset: number
-): string => content.substring(startOffset, endOffset);
-
-// Pure function: check if highlight is still valid
-// Returns updated offsets if found, or null if stale
-export const validateHighlight = (params: {
-  content: string;
-  contentHash: string;
-  startOffset: number;
-  endOffset: number;
-  highlightedText: string;
-}): {
-  isValid: boolean;
-  newStartOffset?: number;
-  newEndOffset?: number;
-  newContentHash?: string;
-} => {
-  const currentHash = computeFileHash(params.content);
-
-  // If hash matches, offsets are still valid
-  if (currentHash === params.contentHash) {
-    return { isValid: true };
-  }
-
-  // Hash changed - try to find the text in new content
-  const newOffsets = findTextOffset(params.content, params.highlightedText);
-
-  if (newOffsets === null) {
-    // Text not found or ambiguous - highlight is stale
-    return { isValid: false };
-  }
-
-  // Text found - update offsets and hash
-  return {
-    isValid: true,
-    newStartOffset: newOffsets.startOffset,
-    newEndOffset: newOffsets.endOffset,
-    newContentHash: currentHash,
-  };
-};
-
-// Side effect: initialize highlights schema in database
+// Side effect: initialize highlights schema in database (with migrations).
 export const initializeHighlightsSchema = (db: DatabaseHandle): void => {
-  // Add content_hash and backup_path columns to resources table if they don't exist
+  // content_hash / backup_path live on the resources table for file backups.
   try {
-    db.exec(`
-      ALTER TABLE resources ADD COLUMN content_hash TEXT;
-    `);
+    db.exec("ALTER TABLE resources ADD COLUMN content_hash TEXT;");
   } catch {
-    // Column already exists - ignore error
+    // Column already exists - ignore.
+  }
+  try {
+    db.exec("ALTER TABLE resources ADD COLUMN backup_path TEXT;");
+  } catch {
+    // Column already exists - ignore.
   }
 
-  try {
-    db.exec(`
-      ALTER TABLE resources ADD COLUMN backup_path TEXT;
-    `);
-  } catch {
-    // Column already exists - ignore error
-  }
-
-  // Create highlights table
   db.exec(`
-    CREATE TABLE IF NOT EXISTS highlights (
-      id TEXT PRIMARY KEY,
-      resource_id TEXT NOT NULL,
-      start_offset INTEGER NOT NULL,
-      end_offset INTEGER NOT NULL,
-      highlighted_text TEXT NOT NULL,
-      content_hash TEXT NOT NULL,
-      is_stale INTEGER NOT NULL DEFAULT 0 CHECK(is_stale IN (0, 1)),
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+    CREATE TABLE IF NOT EXISTS schema_version (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version INTEGER NOT NULL
     );
   `);
 
-  // Create indexes for highlights
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_highlights_resource_id ON highlights(resource_id);
-    CREATE INDEX IF NOT EXISTS idx_highlights_is_stale ON highlights(is_stale);
-    CREATE INDEX IF NOT EXISTS idx_highlights_created_at ON highlights(created_at);
-  `);
+  const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as
+    | { version: number }
+    | undefined;
+  const currentVersion = row?.version ?? 0;
 
-  // Add notes column if it doesn't exist (migration for existing databases)
-  try {
-    db.exec("ALTER TABLE highlights ADD COLUMN notes TEXT");
-  } catch {
-    // Column already exists, ignore error
+  if (currentVersion < HIGHLIGHTS_SCHEMA_VERSION) {
+    // Recreate the highlights table on the text-quote anchor model.
+    db.exec("DROP TABLE IF EXISTS highlights;");
+    db.exec(`
+      CREATE TABLE highlights (
+        id TEXT PRIMARY KEY,
+        resource_id TEXT NOT NULL,
+        exact TEXT NOT NULL,
+        prefix TEXT NOT NULL DEFAULT '',
+        suffix TEXT NOT NULL DEFAULT '',
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+      );
+    `);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_highlights_resource_id ON highlights(resource_id);");
+    db.prepare("INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)").run(
+      HIGHLIGHTS_SCHEMA_VERSION
+    );
   }
 };
 
@@ -227,38 +112,45 @@ const directoryMatchParams = (directoryPath: string): [string, string] => [
   `${escapeLike(directoryPath)}/%`,
 ];
 
-// Side effect: create highlight in database
-// Parameters: db, resource metadata, offsets, text, hash, optional notes
+// A stored highlight anchored by text-quote selector.
+export type StoredHighlight = {
+  id: string;
+  exact: string;
+  prefix: string;
+  suffix: string;
+  notes: string | null;
+  createdAt: number;
+};
+
+// A stored highlight together with its owning resource path.
+export type DirectoryHighlight = StoredHighlight & {
+  resourceId: string;
+  resourcePath: string;
+};
+
+// Side effect: create a text-quote-anchored highlight. Returns the new id.
 export const createHighlight = (params: {
   db: DatabaseHandle;
   resourceId: string;
-  startOffset: number;
-  endOffset: number;
-  highlightedText: string;
-  contentHash: string;
+  exact: string;
+  prefix: string;
+  suffix: string;
   notes?: string;
 }): string => {
   const highlightId = generateId();
-  const timestamp = Date.now();
-
   const stmt = params.db.prepare(`
-    INSERT INTO highlights (
-      id, resource_id, start_offset, end_offset, 
-      highlighted_text, content_hash, is_stale, 
-      notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+    INSERT INTO highlights (id, resource_id, exact, prefix, suffix, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     highlightId,
     params.resourceId,
-    params.startOffset,
-    params.endOffset,
-    params.highlightedText,
-    params.contentHash,
+    params.exact,
+    params.prefix,
+    params.suffix,
     params.notes || null,
-    timestamp,
-    timestamp
+    Date.now()
   );
 
   return highlightId;
@@ -268,48 +160,30 @@ export const createHighlight = (params: {
 export const getHighlightsByResource = (
   db: DatabaseHandle,
   resourceId: string
-): Array<{
-  id: string;
-  startOffset: number;
-  endOffset: number;
-  highlightedText: string;
-  contentHash: string;
-  isStale: boolean;
-  notes: string | null;
-  createdAt: number;
-  updatedAt: number;
-}> => {
+): StoredHighlight[] => {
   const stmt = db.prepare(`
-    SELECT 
-      id, start_offset, end_offset, highlighted_text, 
-      content_hash, is_stale, notes, created_at, updated_at
+    SELECT id, exact, prefix, suffix, notes, created_at
     FROM highlights
     WHERE resource_id = ?
-    ORDER BY start_offset ASC
+    ORDER BY created_at ASC
   `);
 
   const results = stmt.all(resourceId) as Array<{
     id: string;
-    start_offset: number;
-    end_offset: number;
-    highlighted_text: string;
-    content_hash: string;
-    is_stale: number;
+    exact: string;
+    prefix: string;
+    suffix: string;
     notes: string | null;
     created_at: number;
-    updated_at: number;
   }>;
 
   return results.map((row) => ({
     id: row.id,
-    startOffset: row.start_offset,
-    endOffset: row.end_offset,
-    highlightedText: row.highlighted_text,
-    contentHash: row.content_hash,
-    isStale: row.is_stale === 1,
+    exact: row.exact,
+    prefix: row.prefix,
+    suffix: row.suffix,
     notes: row.notes,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
   }));
 };
 
@@ -317,24 +191,10 @@ export const getHighlightsByResource = (
 export const getHighlightsByDirectory = (
   db: DatabaseHandle,
   directoryPath: string
-): Array<{
-  id: string;
-  resourceId: string;
-  resourcePath: string;
-  startOffset: number;
-  endOffset: number;
-  highlightedText: string;
-  contentHash: string;
-  isStale: boolean;
-  notes: string | null;
-  createdAt: number;
-  updatedAt: number;
-}> => {
+): DirectoryHighlight[] => {
   const stmt = db.prepare(`
-    SELECT 
-      h.id, h.resource_id, r.path as resource_path,
-      h.start_offset, h.end_offset, h.highlighted_text, 
-      h.content_hash, h.is_stale, h.notes, h.created_at, h.updated_at
+    SELECT h.id, h.resource_id, r.path as resource_path,
+           h.exact, h.prefix, h.suffix, h.notes, h.created_at
     FROM highlights h
     JOIN resources r ON h.resource_id = r.id
     WHERE r.path = ? OR r.path LIKE ? ESCAPE '\\'
@@ -345,65 +205,23 @@ export const getHighlightsByDirectory = (
     id: string;
     resource_id: string;
     resource_path: string;
-    start_offset: number;
-    end_offset: number;
-    highlighted_text: string;
-    content_hash: string;
-    is_stale: number;
+    exact: string;
+    prefix: string;
+    suffix: string;
     notes: string | null;
     created_at: number;
-    updated_at: number;
   }>;
 
   return results.map((row) => ({
     id: row.id,
     resourceId: row.resource_id,
     resourcePath: row.resource_path,
-    startOffset: row.start_offset,
-    endOffset: row.end_offset,
-    highlightedText: row.highlighted_text,
-    contentHash: row.content_hash,
-    isStale: row.is_stale === 1,
+    exact: row.exact,
+    prefix: row.prefix,
+    suffix: row.suffix,
     notes: row.notes,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
   }));
-};
-
-// Side effect: mark highlight as stale
-export const markHighlightStale = (db: DatabaseHandle, highlightId: string): void => {
-  const stmt = db.prepare(`
-    UPDATE highlights 
-    SET is_stale = 1, updated_at = ?
-    WHERE id = ?
-  `);
-
-  stmt.run(Date.now(), highlightId);
-};
-
-// Side effect: update highlight offsets and hash
-// Parameters: db, highlight ID, new offsets, new hash
-export const updateHighlight = (params: {
-  db: DatabaseHandle;
-  highlightId: string;
-  startOffset: number;
-  endOffset: number;
-  contentHash: string;
-}): void => {
-  const stmt = params.db.prepare(`
-    UPDATE highlights 
-    SET start_offset = ?, end_offset = ?, content_hash = ?, 
-        is_stale = 0, updated_at = ?
-    WHERE id = ?
-  `);
-
-  stmt.run(
-    params.startOffset,
-    params.endOffset,
-    params.contentHash,
-    Date.now(),
-    params.highlightId
-  );
 };
 
 // Side effect: delete highlight. Returns the number of rows deleted.
@@ -411,30 +229,6 @@ export const deleteHighlight = (db: DatabaseHandle, highlightId: string): number
   const stmt = db.prepare("DELETE FROM highlights WHERE id = ?");
   const result = stmt.run(highlightId);
   return result?.changes ?? 0;
-};
-
-// Side effect: mark highlights stale when the file content no longer matches
-// the content they were created against. Non-destructive: never deletes data.
-// Returns the count of highlights newly marked stale.
-export const markStaleHighlights = (
-  db: DatabaseHandle,
-  resourceId: string,
-  fileContent: string
-): number => {
-  const currentHash = computeFileHash(fileContent);
-  const highlights = getHighlightsByResource(db, resourceId);
-  let staleCount = 0;
-
-  for (const highlight of highlights) {
-    // A highlight only renders reliably when the file is byte-identical to
-    // its creation snapshot; any change flags it stale (no offset drift).
-    if (!highlight.isStale && highlight.contentHash !== currentHash) {
-      markHighlightStale(db, highlight.id);
-      staleCount += 1;
-    }
-  }
-
-  return staleCount;
 };
 
 // Side effect: update resource with content hash and backup path
@@ -516,7 +310,7 @@ const formatIsoDate = (timestamp: number): string => new Date(timestamp).toISOSt
 export const generateMarkdownExport = (
   highlights: Array<{
     resourcePath: string;
-    highlightedText: string;
+    exact: string;
     notes: string | null;
     createdAt: number;
   }>,
@@ -531,7 +325,7 @@ export const generateMarkdownExport = (
       const date = formatIsoDate(h.createdAt);
       const notesSection = h.notes ? `\n\n**Note:**\n${h.notes}\n` : "";
 
-      return `## ${fileName}\n\n**Created:** ${date}\n\n> ${h.highlightedText}${notesSection}`;
+      return `## ${fileName}\n\n**Created:** ${date}\n\n> ${h.exact}${notesSection}`;
     })
     .join("\n\n---\n\n");
 

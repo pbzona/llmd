@@ -7,7 +7,6 @@ import "./client/copy-button";
 import { trackDirectoryOpen, trackFileView } from "./client/events";
 import { initFileWatcher } from "./client/file-watcher";
 import { initHighlights } from "./client/highlights";
-import { initHighlightsSummary } from "./client/highlights-summary";
 import "./client/sidebar-resize";
 
 // Expose event tracking functions on window (invoked by inline page scripts)
@@ -26,9 +25,8 @@ initCollapsible();
 initFileWatcher();
 
 // Initialize highlights on markdown pages
-if (document.querySelector(".content")) {
+if (document.querySelector(".markdown-body")) {
   initHighlights();
-  initHighlightsSummary();
 }
 
 console.log("[llmd] Client initialized");

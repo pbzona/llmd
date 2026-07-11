@@ -1,243 +1,159 @@
 # Highlights
 
-Extract and save important passages from your markdown documentation.
+Mark and save important passages from your markdown documentation.
 
-**Highlights is enabled by default.** You can disable it at any time using `llmd highlights disable`.
+Highlights are part of the local tracking service and are available whenever
+event tracking is enabled (the default). Because they share the same service,
+`llmd analytics disable` also turns off highlights; `llmd analytics enable`
+turns them back on.
 
 ## Overview
 
-The highlights feature allows you to mark and save important text passages while reading your markdown files. Highlights are stored in a local SQLite database and persist across sessions. When you modify a file, llmd automatically tracks whether highlights are still valid.
+The highlights feature lets you select text while reading a markdown file and
+save it, optionally with a note. Highlights are stored in a local SQLite
+database and persist across sessions.
+
+Highlights are anchored to the **quoted text plus a little surrounding
+context** (a [W3C TextQuoteSelector](https://www.w3.org/TR/annotation-model/#text-quote-selector)),
+not to character offsets. This means a highlight keeps working when you edit
+other parts of the file, and repeated phrases are disambiguated by their
+surroundings.
 
 ## How It Works
 
-### Creating Highlights
+### Creating highlights
 
-1. Open any markdown file in llmd
-2. Select the text you want to highlight with your mouse
-3. A popup appears near your selection with:
-   - An optional notes text area
-   - A "Create Highlight" button
-   - A close button (×) to dismiss without saving
-4. Add notes (optional) or click "Create Highlight"
-5. The text is immediately highlighted with your theme's highlight color
+1. Open any markdown file in llmd.
+2. Select the text you want to highlight with your mouse.
+3. A popup appears near your selection with an optional note field and a
+   **Create Highlight** button (and a × to dismiss).
+4. Add a note (optional) and click **Create Highlight**.
 
-The highlight is saved to the database and will persist across sessions.
+The highlight is saved and painted with your theme's highlight color.
 
-### Viewing Highlights
+### Viewing highlights
 
-**On the page:**
-- Highlights appear with your theme's highlight color and a border
-- Click on any highlighted text to view your notes in a popup
-- A summary box shows all highlights for the current file
-- Click any highlight in the summary to scroll to it in the document
+**On the page**
 
-**In the sidebar:**
-- Files with highlights have a filled file icon (subtle indicator)
-- Quickly identify which files contain highlights at a glance
+- Highlights are painted in the rendered document after it loads.
+- Click a highlight to view its note.
+- A summary box above the document lists every highlight in the file; click one
+  to scroll to it.
 
-**In the highlights page:**
-- Click "Highlights" in the sidebar under "Admin"
-- View all highlights across your entire directory
-- See which file each highlight belongs to
-- Identify stale highlights (marked with ⚠️)
+**On the highlights page** (sidebar → Admin → Highlights)
 
-### Stale Highlights
+- Lists all highlights in the current directory.
+- Shows which file each highlight belongs to.
+- Marks highlights whose text can no longer be found as **stale**.
 
-When you edit a file, llmd checks if the highlighted text still exists:
+### Stale highlights
 
-- ✅ **Valid**: Text found at the same location → highlight updates automatically
-- ✅ **Relocated**: Text found at a new location → offsets updated automatically  
-- ⚠️ **Stale**: Text not found or appears multiple times → marked as stale
+Each time a document is displayed, llmd re-resolves every highlight against the
+current rendered text:
 
-Stale highlights are displayed with:
-- Your theme's stale highlight color and dashed border
-- Warning icon in the summary
-- Option to restore the original file
+- **Found** – the quoted text still exists (context disambiguates duplicates) →
+  the highlight is painted normally.
+- **Not found** – the quoted text is gone → the highlight is shown as **stale**
+  on the highlights page and is not painted in the document.
 
-### File Backups
+Staleness is display-only. Highlights are **never** deleted automatically; use
+the Delete button on the highlights page to remove one.
 
-The first time you create a highlight in a file, llmd automatically creates a backup in:
+### File backups
 
-```
-~/.cache/llmd/file-backups/{resource-id}_{timestamp}.md
-```
-
-This backup lets you restore the file to its original state if highlights become stale.
+The first time you create a highlight in a file, llmd stores a copy of the file
+in `~/.cache/llmd/file-backups/`. Manage these with the `llmd archive` commands.
 
 ## Storage
 
-All highlights data is stored in the llmd SQLite database at:
+Highlights live in the llmd SQLite database at `~/.local/share/llmd/llmd.db`.
+The `highlights` table stores, per highlight:
 
-```
-~/.local/share/llmd/llmd.db
-```
+| Column       | Description                                        |
+| ------------ | -------------------------------------------------- |
+| `id`         | UUID                                               |
+| `resource_id`| Owning file resource                               |
+| `exact`      | The highlighted text                               |
+| `prefix`     | A short slice of text immediately before it        |
+| `suffix`     | A short slice of text immediately after it         |
+| `notes`      | Optional note                                      |
+| `created_at` | Creation timestamp                                 |
 
-The database includes:
-- **Highlights**: Byte offsets, text content, timestamps, stale status, notes
-- **Resources**: File paths, content hashes, backup paths  
-- **Validation**: SHA-256 hashes to detect file changes
-- **Analytics**: Usage events and statistics (if analytics is enabled)
+A `schema_version` table tracks migrations.
 
-## Technical Details
+## Anchoring model
 
-### Offset-Based Tracking
-
-Highlights use byte offsets (UTF-8 encoding) to track text positions:
-
-```typescript
-{
-  startOffset: 150,    // Start position in bytes
-  endOffset: 225,      // End position in bytes
-  highlightedText: "..." // Original text for validation
-}
-```
-
-This approach:
-- ✅ Doesn't lock files (you can edit freely)
-- ✅ Fast validation and rendering
-- ✅ Works across different editors
-- ⚠️ Breaks when text is moved or deleted (marked as stale)
-
-### Validation Strategy
-
-When loading a file, llmd validates each highlight:
-
-1. **Hash check**: Compare current file hash to stored hash
-2. **Exact match**: Check if text exists at the stored offsets
-3. **Grep search**: Try to find text elsewhere in the file
-4. **Mark stale**: If text not found or found multiple times
-
-### Restoration Options
-
-When restoring a file from backup:
-
-- **Replace**: Overwrites the current file (⚠️ loses recent changes)
-- **Timestamped Copy**: Creates a new file like `file_1234567890.md` (✅ safe)
+- Anchors are resolved against the document's **rendered plain text** (the text
+  content of the rendered markdown), not the markdown source. This avoids the
+  code-fence, heading, and table-of-contents corruption that source-offset
+  injection caused.
+- Resolution and painting happen **on the client**, against the live DOM, after
+  the page renders. The server sends clean HTML and stores/serves anchors only.
+- The server performs the same resolution when rendering the highlights page, to
+  compute the stale indicator.
 
 ## API
 
-The highlights feature exposes REST API endpoints:
+All endpoints are restricted to local (loopback) requests.
 
-### POST `/api/highlights`
-Create a new highlight.
+### `POST /api/highlights`
 
-**Request:**
 ```json
 {
   "resourcePath": "README.md",
-  "startOffset": 100,
-  "endOffset": 250,
-  "highlightedText": "The actual text content"
+  "exact": "the highlighted text",
+  "prefix": "text just before ",
+  "suffix": " text just after",
+  "notes": "optional note"
 }
 ```
 
-**Response:**
-```json
-{
-  "id": "fac85465-1ef1-4465-9714-27840a4e3770"
-}
-```
+Response: `{ "id": "…" }`
 
-### GET `/api/highlights/resource?path=...`
-Get all highlights for a specific file.
+### `GET /api/highlights/resource?path=…`
 
-**Response:**
+Returns the highlights for a file:
+
 ```json
 {
   "highlights": [
-    {
-      "id": "...",
-      "startOffset": 100,
-      "endOffset": 250,
-      "highlightedText": "...",
-      "isStale": false,
-      "createdAt": 1703001234567,
-      "updatedAt": 1703001234567
-    }
+    { "id": "…", "exact": "…", "prefix": "…", "suffix": "…", "notes": null, "createdAt": 1703001234567 }
   ]
 }
 ```
 
-### GET `/api/highlights/directory?path=...`
-Get all highlights in a directory.
+### `GET /api/highlights/directory?path=…`
 
-### DELETE `/api/highlights/:id`
-Delete a highlight.
+Returns the highlights for every file under a directory.
 
-### POST `/api/highlights/:id/restore`
-Restore file from backup.
+### `DELETE /api/highlights/:id`
 
-**Request:**
-```json
-{
-  "useTimestamp": true  // true = timestamped copy, false = replace
-}
-```
+Deletes a highlight (`204` on success, `404` if it does not exist).
 
-## CLI Commands
+## CLI commands
 
-### Enable/Disable Highlights
-
-Highlights is **enabled by default**. You can disable or re-enable it:
+### Export highlights
 
 ```bash
-# Disable highlights feature
-llmd highlights disable
-
-# Re-enable highlights feature
-llmd highlights enable
+llmd export              # export the current directory
+llmd export ./docs       # export a specific directory
 ```
 
-The setting is stored in the database at `~/.local/share/llmd/llmd.db` and persists across sessions. When disabled, the highlight creation UI and API endpoints will not be available.
+Exports are written to `~/.llmd/{directory}-{date}.md`.
 
-### Export Highlights
-
-Export all highlights from a directory to a markdown file:
+### Archive management
 
 ```bash
-llmd export              # Export current directory
-llmd export ./docs       # Export specific directory
+llmd archive list            # list backed-up files
+llmd archive show README.md  # show a backup's details
+llmd archive clear           # delete all backups
 ```
 
-Exports are saved to `~/.llmd/{directory}-{date}.md` with:
-- File grouping by document
-- Creation timestamps
-- Original highlighted text
-- Any notes (if added)
-
-### Archive Management
-
-The archive stores backup copies of files when highlights are created.
-
-**List backups:**
-```bash
-llmd archive list
-```
-
-**Show backup details:**
-```bash
-llmd archive show README.md
-```
-
-**Clear all backups:**
-```bash
-llmd archive clear
-```
-
-Archive location: `~/.cache/llmd/file-backups/`
+Archive location: `~/.cache/llmd/file-backups/`.
 
 ## Limitations
 
-- **Binary offsets**: Highlights use byte positions, not character positions
-- **No line tracking**: Changes above a highlight shift its position
-- **Single file only**: Can't highlight across multiple files
-- **No categories**: All highlights are treated equally
-
-## Future Enhancements
-
-Potential improvements for future versions:
-
-- Highlight categories and colors
-- Search across all highlights
-- Highlight notes and annotations
-- Line-based tracking (more resilient to edits)
+- A highlight is scoped to a single file.
+- If the exact quoted text is removed, the highlight becomes stale (it is not
+  re-anchored to different text).
+- No highlight categories or colors yet.

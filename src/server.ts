@@ -1,5 +1,6 @@
 // HTTP server using Node.js http + ws
 
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { WebSocket } from "ws";
@@ -80,63 +81,16 @@ const resolveCodeTheme = (config: Config): string => {
   return config.theme === "light" || config.theme === "solarized" ? "github-light" : "github-dark";
 };
 
-// Helper: inject highlight marks into markdown source
-const injectHighlightMarks = (
-  markdown: string,
-  highlights: Array<{ id: string; startOffset: number; endOffset: number; isStale: boolean }>
-): string => {
-  // Stale highlights are not rendered inline (their offsets are untrusted).
-  const active = highlights.filter((h) => !h.isStale);
-
-  // Apply from end to start so earlier offsets are not shifted.
-  const sorted = [...active].sort((a, b) => b.startOffset - a.startOffset);
-
-  let result = markdown;
-  for (const highlight of sorted) {
-    const before = result.slice(0, highlight.startOffset);
-    const text = result.slice(highlight.startOffset, highlight.endOffset);
-    const after = result.slice(highlight.endOffset);
-    const mark = `<mark class="llmd-highlight" data-highlight-id="${highlight.id}">${text}</mark>`;
-    result = before + mark + after;
-  }
-
-  return result;
-};
-
-// Helper: decorate markdown with any active highlights for the resource
-const decorateWithHighlights = async (
-  markdown: string,
-  absolutePath: string,
-  eventService: EventService | null
-): Promise<string> => {
-  if (!eventService) {
-    return markdown;
-  }
-
-  const highlightsModule = await import("./highlights");
-  const db = eventService.getDatabase();
-  const resource = highlightsModule.getResourceByPath(db, absolutePath);
-  if (!resource) {
-    return markdown;
-  }
-
-  // Non-destructive: flag highlights stale when the file changed; never delete.
-  highlightsModule.markStaleHighlights(db, resource.id, markdown);
-
-  const highlights = highlightsModule.getHighlightsByResource(db, resource.id);
-  return highlights.length > 0 ? injectHighlightMarks(markdown, highlights) : markdown;
-};
-
-// Helper: handle markdown file view
+// Helper: handle markdown file view. Serves clean HTML; highlights are
+// resolved and painted on the client against the rendered document.
 const handleMarkdownView = async (params: {
   viewPath: string;
   config: Config;
   files: MarkdownFile[];
   clientScript: string;
   res: ServerResponse;
-  eventService: EventService | null;
 }): Promise<void> => {
-  const { viewPath, config, files, clientScript, res, eventService } = params;
+  const { viewPath, config, files, clientScript, res } = params;
   const markdown = await readMarkdownFile(config.directory, viewPath);
 
   if (markdown === null) {
@@ -152,15 +106,8 @@ const handleMarkdownView = async (params: {
   }
 
   try {
-    const absolutePath = resolveSafePath(config.directory, viewPath) ?? "";
-    const markdownWithHighlights = await decorateWithHighlights(
-      markdown,
-      absolutePath,
-      eventService
-    );
-
     const filename = viewPath.split("/").pop() ?? viewPath;
-    const { html, toc } = await processMarkdown(markdownWithHighlights, resolveCodeTheme(config));
+    const { html, toc } = await processMarkdown(markdown, resolveCodeTheme(config));
     const page = generateMarkdownPage({
       html,
       toc,
@@ -241,10 +188,48 @@ const handleHighlightsPage = async (params: {
     const directory = resolveSafePath(config.directory, requested) ?? config.directory;
 
     const { getHighlightsByDirectory } = await import("./highlights");
+    const { extractPlainText } = await import("./markdown");
+    const { resolveAnchor } = await import("./anchor");
     const highlights = getHighlightsByDirectory(eventService.getDatabase(), directory);
 
+    // Compute staleness (display-only) by resolving each anchor against the
+    // rendered plain text of its file. Rendered text is cached per file.
+    const textCache = new Map<string, string | null>();
+    const renderedText = (filePath: string): string | null => {
+      const cached = textCache.get(filePath);
+      if (cached !== undefined) {
+        return cached;
+      }
+      let text: string | null = null;
+      try {
+        text = extractPlainText(readFileSync(filePath, "utf-8"));
+      } catch {
+        text = null;
+      }
+      textCache.set(filePath, text);
+      return text;
+    };
+
+    const views = highlights.map((h) => {
+      const text = renderedText(h.resourcePath);
+      return {
+        id: h.id,
+        resourcePath: h.resourcePath,
+        exact: h.exact,
+        notes: h.notes,
+        createdAt: h.createdAt,
+        isStale: text === null || resolveAnchor(text, h) === null,
+      };
+    });
+
     const { generateHighlightsPage } = await import("./highlights-template");
-    const html = generateHighlightsPage({ directory, config, files, clientScript, highlights });
+    const html = generateHighlightsPage({
+      directory,
+      config,
+      files,
+      clientScript,
+      highlights: views,
+    });
     sendResponse(res, 200, htmlHeaders(), html);
   } catch (err) {
     console.error("[highlights] Failed to generate highlights page:", err);
@@ -326,7 +311,7 @@ const routePage = async (url: URL, res: ServerResponse, ctx: RequestContext): Pr
 
   const viewPath = parseViewPath(pathname);
   if (viewPath) {
-    await handleMarkdownView({ viewPath, config, files, clientScript, res, eventService });
+    await handleMarkdownView({ viewPath, config, files, clientScript, res });
     return;
   }
 

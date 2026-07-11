@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-10
+
+### Changed
+- Re-architected highlights onto a text-quote anchor model (W3C
+  TextQuoteSelector). Highlights now store the quoted text plus a short
+  prefix/suffix of context instead of markdown-source character offsets:
+  - Highlights survive edits elsewhere in the file and disambiguate repeated
+    phrases by their surrounding context
+  - Anchors resolve against the document's rendered plain text, so highlights no
+    longer corrupt code fences, headings, or the table of contents
+  - Resolution and painting happen on the client against the live DOM; the
+    server serves clean HTML and stores/serves anchors only
+  - Staleness is recomputed on every view and is display-only; highlights are
+    never auto-deleted or silently re-anchored to unrelated text
+- New shared, unit-tested resolver in `anchor.ts` used by both server and client
+- Database: `highlights` table rebuilt on the anchor model behind a
+  `schema_version` migration; enabled WAL + busy_timeout to avoid `SQLITE_BUSY`
+  between concurrent instances
+- The highlights summary now renders from a single fetch (no duplicate request)
+
+### Added
+- Rewritten highlights documentation (`docs/highlights.md`,
+  `docs/highlight_implementation.md`) describing the anchor model
+
 ## [0.6.0] - 2026-07-10
 
 ### Security
