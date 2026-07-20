@@ -1,7 +1,9 @@
 // Integration tests for the HTTP server (routing + security).
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scanMarkdownFiles } from "./scanner";
@@ -140,5 +142,75 @@ describe("Highlights API", () => {
     );
     const remaining = (await after.json()) as { highlights: unknown[] };
     expect(remaining.highlights).toHaveLength(0);
+  });
+});
+
+describe("Server shutdown", () => {
+  test("closes connections with incomplete request bodies", async () => {
+    const config: Config = {
+      directory: docsDir,
+      port: 0,
+      theme: "dark",
+      open: false,
+      watch: false,
+      treeDepth: 5,
+    };
+    const files = await scanMarkdownFiles(docsDir, config.treeDepth);
+    const shutdownServer = await (async (): Promise<ServerHandle> => {
+      const eventsSetting = process.env.LLMD_ENABLE_EVENTS;
+      process.env.LLMD_ENABLE_EVENTS = "false";
+      try {
+        return await startServer(config, files);
+      } finally {
+        if (eventsSetting === undefined) {
+          Reflect.deleteProperty(process.env, "LLMD_ENABLE_EVENTS");
+        } else {
+          process.env.LLMD_ENABLE_EVENTS = eventsSetting;
+        }
+      }
+    })();
+    let socket: Socket | undefined;
+    let stopPromise: Promise<void> | undefined;
+
+    try {
+      socket = createConnection({ host: shutdownServer.hostname, port: shutdownServer.port });
+      await once(socket, "connect");
+
+      socket.write(
+        [
+          "POST /shutdown-test HTTP/1.1",
+          `Host: ${shutdownServer.hostname}:${shutdownServer.port}`,
+          "Content-Type: application/json",
+          "Content-Length: 100",
+          "Connection: keep-alive",
+          "",
+          "{",
+        ].join("\r\n")
+      );
+      await once(socket, "data");
+
+      stopPromise = shutdownServer.stop();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const boundedStop = Promise.race([
+        stopPromise,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Server shutdown timed out with an active request")),
+            1000
+          );
+        }),
+      ]);
+
+      try {
+        await boundedStop;
+      } finally {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+      }
+    } finally {
+      socket?.destroy();
+      await (stopPromise ?? shutdownServer.stop());
+    }
   });
 });

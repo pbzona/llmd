@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import {
@@ -420,6 +421,11 @@ export const startServer = async (config: Config, files: MarkdownFile[]): Promis
   const clientScript = devMode ? getClientScriptTagExternal() : await getClientScriptTag();
 
   const server = createServer(createHandler(config, files, clientScript, eventService));
+  const sockets = new Set<Socket>();
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
 
   const wss = config.watch ? setupWebSocketServer(server, config) : undefined;
 
@@ -444,6 +450,10 @@ export const startServer = async (config: Config, files: MarkdownFile[]): Promis
       wss?.close();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
+        // Graceful close waits for active requests, including stalled request bodies.
+        for (const socket of sockets) {
+          socket.destroy();
+        }
       });
     },
   };
