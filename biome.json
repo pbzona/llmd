@@ -49,6 +49,7 @@
       "!**/dist",
       "!**/build",
       "!**/.next",
+      "!**/.cursor",
       "!**/coverage",
       "!**/*.min.js",
       "!scripts/check-contrast.ts"

@@ -1,8 +1,8 @@
-pnpm test
-
 #!/bin/sh
 # Exit on any error
 set -e
+
+pnpm test
 
 # Check if there are any staged files
 if [ -z "$(git diff --cached --name-only)" ]; then
@@ -22,8 +22,9 @@ PARTIALLY_STAGED=$(git diff --name-only)
 git stash push --quiet --keep-index --message "pre-commit-stash" || true
 STASHED=$?
 
-# Run formatter on the staged files
-bun x ultracite fix
+# Run the pinned local Biome version. Ultracite's wrapper downloads the latest
+# Biome release, which may not match the installed Ultracite preset.
+bun x biome check --write .
 FORMAT_EXIT_CODE=$?
 
 # Restore working directory state
