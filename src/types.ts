@@ -68,7 +68,7 @@ export type CliResult =
   | { type: "archive-show"; path: string }
   | { type: "archive-clear" }
   | { type: "export"; path: string }
-  | { type: "docs" }
+  | { type: "docs"; flags: ParsedArgs["flags"] }
   | { type: "exit" };
 
 export type ScanOptions = {

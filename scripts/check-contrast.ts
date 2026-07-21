@@ -12,11 +12,15 @@
 
 // biome-ignore lint/style/useLiteralEnumMembers: bitwise operations needed for color calculations
 // biome-ignore lint/style/useTemplate: cleaner without template literals in this file
-import { getAvailableThemes, getThemeColors } from "../src/theme-config";
+import { getAvailableThemes, getTheme } from "../src/theme-config";
 
 // Calculate relative luminance (WCAG formula)
 const getLuminance = (hex: string): number => {
-  const rgb = Number.parseInt(hex.replace("#", ""), 16);
+  const shortHex = /^#[0-9a-f]{3}$/i.test(hex);
+  const normalizedHex = shortHex
+    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+    : hex;
+  const rgb = Number.parseInt(normalizedHex.replace("#", ""), 16);
   // biome-ignore lint/style/useExponentiationOperator: bitwise is more efficient
   // biome-ignore lint/suspicious/noDoubleEquals: bitwise required
   const r = (rgb >> 16) & 0xff;
@@ -83,7 +87,7 @@ const isDarkTheme = (bgColor: string): boolean => {
 
 // Main checker
 const checkThemeContrast = (themeName: string): void => {
-  const colors = getThemeColors(themeName);
+  const colors = getTheme(themeName).colors;
   const dark = isDarkTheme(colors.bg);
 
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);

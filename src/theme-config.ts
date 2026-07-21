@@ -4,7 +4,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+const THEME_DESIGNS = ["technical", "editorial", "cozy"] as const;
+
+export type ThemeDesign = (typeof THEME_DESIGNS)[number];
+
 export type Theme = {
+  // Optional component styling; omitted themes retain the original UI
+  design?: ThemeDesign;
   // Color configuration
   colors: {
     bg: string;
@@ -204,6 +210,84 @@ const BUILT_IN_THEMES: Record<string, Theme> = {
       code: '"SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace',
     },
   },
+  // Deep blue-black theme with soft, low-glare contrast
+  vesper: {
+    design: "technical",
+    colors: {
+      bg: "#111719",
+      fg: "#d9e2df",
+      border: "#566864",
+      hover: "#202b2c",
+      accent: "#79c7b7",
+      codeBg: "#192123",
+      sidebarBg: "#0d1214",
+      folderIcon: "#d3a76d",
+      fileIcon: "#82b9da",
+      highlightBg: "#315b55",
+      highlightStaleBg: "#653842",
+      headingColor: "#f1f5f2",
+    },
+    fonts: {
+      body: '"Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      heading: '"Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      code: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
+      googleFontsUrl:
+        "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap",
+    },
+    codeTheme: "github-dark",
+  },
+  // Warm editorial theme inspired by uncoated paper and letterpress ink
+  folio: {
+    design: "editorial",
+    colors: {
+      bg: "#f6f1e7",
+      fg: "#2c2924",
+      border: "#948a7b",
+      hover: "#e9e1d4",
+      accent: "#933529",
+      codeBg: "#eee6d8",
+      sidebarBg: "#ebe3d5",
+      folderIcon: "#76591e",
+      fileIcon: "#933529",
+      highlightBg: "#f0d58c",
+      highlightStaleBg: "#edb6aa",
+      headingColor: "#171713",
+    },
+    fonts: {
+      body: '"Source Serif 4", Georgia, "Times New Roman", serif',
+      heading: '"DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      code: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
+      googleFontsUrl:
+        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:wght@400;600;700&display=swap",
+    },
+    codeTheme: "github-light",
+  },
+  // Warm low-light theme designed for comfortable evening reading
+  ember: {
+    design: "cozy",
+    colors: {
+      bg: "#1c1714",
+      fg: "#eadfce",
+      border: "#756152",
+      hover: "#332822",
+      accent: "#e0a46a",
+      codeBg: "#251e1a",
+      sidebarBg: "#15110f",
+      folderIcon: "#c4a36a",
+      fileIcon: "#d27d62",
+      highlightBg: "#574226",
+      highlightStaleBg: "#59302f",
+      headingColor: "#f4d5a6",
+    },
+    fonts: {
+      body: '"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      heading: '"Fraunces", Georgia, "Times New Roman", serif',
+      code: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
+      googleFontsUrl:
+        "https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap",
+    },
+    codeTheme: "monokai",
+  },
 };
 
 // Required properties for a valid custom theme
@@ -245,6 +329,14 @@ const validateTheme = (name: string, theme: unknown): Theme | null => {
 
   if (fonts.googleFontsUrl !== undefined && typeof fonts.googleFontsUrl !== "string") {
     console.warn(`[llmd] Skipping theme with invalid googleFontsUrl: ${name}`);
+    return null;
+  }
+
+  if (
+    t.design !== undefined &&
+    (typeof t.design !== "string" || !THEME_DESIGNS.includes(t.design as ThemeDesign))
+  ) {
+    console.warn(`[llmd] Skipping theme with invalid design: ${name}`);
     return null;
   }
 

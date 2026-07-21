@@ -1,7 +1,7 @@
 // HTML template generation
 
 import { escapeAttr, escapeHtml, scriptValue } from "./escape";
-import { getTheme } from "./theme-config";
+import { getTheme, type Theme, type ThemeDesign } from "./theme-config";
 import type { Config, MarkdownFile } from "./types";
 
 // Pure function: percent-encode a relative path for use in a /view/ URL,
@@ -59,6 +59,429 @@ const LIGHT_PALETTE: UiPalette = {
   tocHead: "#666",
   contrast: "#fff",
   flashEnd: "rgba(255, 235, 59, 0.35)",
+};
+
+// Pure function: add a cohesive component system while leaving legacy themes untouched.
+const getDesignStyles = (design: ThemeDesign | undefined, fonts: Theme["fonts"]): string => {
+  switch (design) {
+    case "technical":
+      return `
+    body[data-design="technical"] {
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    body[data-design="technical"] .sidebar {
+      width: 260px;
+    }
+
+    body[data-design="technical"] .sidebar-header {
+      padding: 16px;
+    }
+
+    body[data-design="technical"] .sidebar-header h1 {
+      font-family: ${fonts.code};
+      font-size: 0.9375rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    body[data-design="technical"] .sidebar-nav {
+      gap: 0;
+      padding: 8px;
+    }
+
+    body[data-design="technical"] .sidebar-nav .dir-group {
+      margin: 3px 0;
+    }
+
+    body[data-design="technical"] .sidebar-nav .dir-group-header,
+    body[data-design="technical"] .sidebar-nav a {
+      border-radius: 2px;
+      padding: 6px 8px;
+    }
+
+    body[data-design="technical"] .sidebar-nav a.active {
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
+      box-shadow: inset 2px 0 0 var(--accent);
+      color: var(--accent);
+    }
+
+    body[data-design="technical"] .sidebar-nav a.active svg {
+      color: var(--accent);
+    }
+
+    body[data-design="technical"] .main {
+      padding: 48px clamp(32px, 6vw, 88px);
+    }
+
+    body[data-design="technical"] .container {
+      max-width: 920px;
+    }
+
+    body[data-design="technical"] .file-metadata {
+      margin-bottom: 32px;
+      padding: 8px 0;
+      background: transparent;
+      border-width: 0 0 1px;
+      border-radius: 0;
+    }
+
+    body[data-design="technical"] .file-path {
+      color: var(--accent);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    body[data-design="technical"] .content h1,
+    body[data-design="technical"] .content h2,
+    body[data-design="technical"] .content h3,
+    body[data-design="technical"] .content h4,
+    body[data-design="technical"] .content h5,
+    body[data-design="technical"] .content h6 {
+      font-weight: 700;
+      letter-spacing: -0.035em;
+    }
+
+    body[data-design="technical"] .content h1 {
+      margin-top: 1.5rem;
+      font-size: 2.8rem;
+    }
+
+    body[data-design="technical"] .content h2 {
+      padding-bottom: 0.45rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 1.8rem;
+    }
+
+    body[data-design="technical"] .content h3 {
+      font-size: 1.35rem;
+    }
+
+    body[data-design="technical"] .content p,
+    body[data-design="technical"] .content ul,
+    body[data-design="technical"] .content ol {
+      max-width: 72ch;
+    }
+
+    body[data-design="technical"] .toc {
+      margin: 24px 0 40px;
+      padding: 12px 0;
+      background: transparent;
+      border-width: 1px 0;
+      border-radius: 0;
+    }
+
+    body[data-design="technical"] .content pre {
+      padding: 1rem;
+      border-radius: 3px;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent);
+      font-size: 0.875rem;
+    }
+
+    body[data-design="technical"] .content p code {
+      border-radius: 2px;
+    }
+
+    body[data-design="technical"] .content blockquote {
+      border-left-width: 2px;
+      font-style: normal;
+    }
+
+    body[data-design="technical"] .content table {
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+      body[data-design="technical"] .content h1 { font-size: 2.25rem; }
+    }
+  `;
+    case "editorial":
+      return `
+    body[data-design="editorial"] {
+      font-size: 18px;
+      line-height: 1.82;
+    }
+
+    body[data-design="editorial"] .sidebar {
+      width: 248px;
+    }
+
+    body[data-design="editorial"] .sidebar-header {
+      padding: 26px 22px;
+    }
+
+    body[data-design="editorial"] .sidebar-header h1 {
+      font-family: ${fonts.body};
+      font-size: 1.25rem;
+      letter-spacing: 0;
+    }
+
+    body[data-design="editorial"] .sidebar-nav {
+      gap: 0;
+      padding: 16px 12px;
+    }
+
+    body[data-design="editorial"] .sidebar-nav .dir-group-header,
+    body[data-design="editorial"] .sidebar-nav a {
+      border-radius: 0;
+      padding: 7px 8px;
+      font-size: 0.9375rem;
+    }
+
+    body[data-design="editorial"] .sidebar-nav a.active {
+      background: transparent;
+      box-shadow: none;
+      color: var(--accent);
+    }
+
+    body[data-design="editorial"] .sidebar-nav a.active span {
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 4px;
+    }
+
+    body[data-design="editorial"] .sidebar-nav a.active svg {
+      color: var(--accent);
+    }
+
+    body[data-design="editorial"] .main {
+      padding: 72px clamp(40px, 8vw, 120px);
+    }
+
+    body[data-design="editorial"] .container {
+      max-width: 700px;
+    }
+
+    body[data-design="editorial"] .file-metadata {
+      margin-bottom: 52px;
+      padding: 10px 0;
+      background: transparent;
+      border-width: 1px 0;
+      border-radius: 0;
+      text-align: center;
+    }
+
+    body[data-design="editorial"] .file-path {
+      font-size: 0.6875rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    body[data-design="editorial"] .content h1,
+    body[data-design="editorial"] .content h2,
+    body[data-design="editorial"] .content h3,
+    body[data-design="editorial"] .content h4,
+    body[data-design="editorial"] .content h5,
+    body[data-design="editorial"] .content h6 {
+      line-height: 1.12;
+      font-weight: 600;
+      letter-spacing: -0.035em;
+    }
+
+    body[data-design="editorial"] .content h1 {
+      margin: 1.5rem 0 1.4rem;
+      font-size: 3.4rem;
+    }
+
+    body[data-design="editorial"] .content h2 {
+      margin-top: 3.25rem;
+      font-size: 2.25rem;
+    }
+
+    body[data-design="editorial"] .content h3 {
+      margin-top: 2.5rem;
+      font-size: 1.55rem;
+    }
+
+    body[data-design="editorial"] .content p,
+    body[data-design="editorial"] .content ul,
+    body[data-design="editorial"] .content ol {
+      max-width: 60ch;
+    }
+
+    body[data-design="editorial"] .content p {
+      margin: 1.5rem 0;
+    }
+
+    body[data-design="editorial"] .toc {
+      margin: 32px 0 52px;
+      padding: 18px 0;
+      background: transparent;
+      border-width: 1px 0;
+      border-radius: 0;
+    }
+
+    body[data-design="editorial"] .toc h3 {
+      font-family: ${fonts.heading};
+    }
+
+    body[data-design="editorial"] .content pre {
+      margin: 2.25rem 0;
+      padding: 1.5rem;
+      border-radius: 0;
+      border-left: 4px solid var(--accent);
+      box-shadow: 6px 6px 0 color-mix(in srgb, var(--border) 38%, transparent);
+      font-size: 0.8125rem;
+    }
+
+    body[data-design="editorial"] .content p code {
+      border-radius: 0;
+    }
+
+    body[data-design="editorial"] .content blockquote {
+      margin: 2.25rem 0;
+      padding: 1.25rem 0;
+      border-width: 1px 0;
+      border-style: solid;
+      border-color: var(--border);
+      font-size: 1.08em;
+    }
+
+    body[data-design="editorial"] .content th {
+      font-family: ${fonts.heading};
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    body[data-design="editorial"] .content img {
+      border-radius: 0;
+    }
+
+    @media (max-width: 768px) {
+      body[data-design="editorial"] { font-size: 17px; }
+      body[data-design="editorial"] .file-metadata { margin-bottom: 36px; }
+      body[data-design="editorial"] .content h1 { font-size: 2.65rem; }
+    }
+  `;
+    case "cozy":
+      return `
+    body[data-design="cozy"] {
+      font-size: 17px;
+      line-height: 1.78;
+    }
+
+    body[data-design="cozy"] .sidebar {
+      width: 300px;
+    }
+
+    body[data-design="cozy"] .sidebar-header {
+      padding: 24px;
+    }
+
+    body[data-design="cozy"] .sidebar-header h1 {
+      font-family: ${fonts.heading};
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    body[data-design="cozy"] .sidebar-nav {
+      gap: 4px;
+      padding: 16px 12px;
+    }
+
+    body[data-design="cozy"] .sidebar-nav .dir-group-header,
+    body[data-design="cozy"] .sidebar-nav a {
+      border-radius: 999px;
+      padding: 9px 12px;
+    }
+
+    body[data-design="cozy"] .sidebar-nav a.active {
+      box-shadow: 0 7px 20px color-mix(in srgb, var(--accent) 20%, transparent);
+    }
+
+    body[data-design="cozy"] .main {
+      padding: 56px clamp(36px, 7vw, 100px);
+      background: radial-gradient(
+        circle at 80% 0%,
+        color-mix(in srgb, var(--accent) 5%, transparent),
+        transparent 34rem
+      );
+    }
+
+    body[data-design="cozy"] .container {
+      max-width: 780px;
+    }
+
+    body[data-design="cozy"] .file-metadata {
+      margin-bottom: 40px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    body[data-design="cozy"] .content h1,
+    body[data-design="cozy"] .content h2,
+    body[data-design="cozy"] .content h3,
+    body[data-design="cozy"] .content h4,
+    body[data-design="cozy"] .content h5,
+    body[data-design="cozy"] .content h6 {
+      line-height: 1.16;
+      letter-spacing: -0.03em;
+    }
+
+    body[data-design="cozy"] .content h1 {
+      margin: 1.75rem 0 1.25rem;
+      font-size: 3.1rem;
+    }
+
+    body[data-design="cozy"] .content h2 {
+      margin-top: 2.75rem;
+      font-size: 2.2rem;
+    }
+
+    body[data-design="cozy"] .content h3 {
+      margin-top: 2.25rem;
+      font-size: 1.55rem;
+    }
+
+    body[data-design="cozy"] .content p,
+    body[data-design="cozy"] .content ul,
+    body[data-design="cozy"] .content ol {
+      max-width: 64ch;
+    }
+
+    body[data-design="cozy"] .toc {
+      margin: 28px 0 44px;
+      padding: 20px 24px;
+      border-radius: 16px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+    }
+
+    body[data-design="cozy"] .content pre {
+      margin: 2rem 0;
+      padding: 1.5rem;
+      border-radius: 14px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
+    }
+
+    body[data-design="cozy"] .content p code {
+      border-radius: 6px;
+    }
+
+    body[data-design="cozy"] .content blockquote {
+      margin: 2rem 0;
+      padding: 1rem 1.25rem;
+      background: var(--sidebar-bg);
+      border-left-width: 3px;
+      border-radius: 0 12px 12px 0;
+      font-style: normal;
+    }
+
+    body[data-design="cozy"] .content img {
+      border-radius: 16px;
+    }
+
+    @media (max-width: 768px) {
+      body[data-design="cozy"] { font-size: 16px; }
+      body[data-design="cozy"] .content h1 { font-size: 2.5rem; }
+    }
+  `;
+    default:
+      return "";
+  }
 };
 
 // Pure function: generate embedded CSS
@@ -658,11 +1081,15 @@ const getStyles = (themeName: string): string => {
     .highlight-flash {
       animation: highlight-flash 1s ease-out;
     }
-    
+
+    ${getDesignStyles(theme.design, fontFamilies)}
+
     @media (max-width: 768px) {
       body { flex-direction: column; }
       .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
       .main { padding: 20px; }
+      body[data-design] .sidebar { width: 100%; }
+      body[data-design] .main { padding: 20px; }
     }
   `;
 };
@@ -851,6 +1278,8 @@ export const baseLayout = (options: LayoutOptions): string => {
   const watchAttr = watchEnabled && watchFile ? ` data-watch-file="${escapeAttr(watchFile)}"` : "";
 
   const fontImport = generateFontImport(theme);
+  const themeConfig = getTheme(theme);
+  const designAttr = themeConfig.design ? ` data-design="${escapeAttr(themeConfig.design)}"` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -862,7 +1291,7 @@ export const baseLayout = (options: LayoutOptions): string => {
   ${fontImport}
   <style>${getStyles(theme)}</style>
 </head>
-<body${watchAttr}>
+<body${watchAttr}${designAttr}>
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>

@@ -53,7 +53,7 @@ llmd docs
 | Flag                   | Description                                                                | Default      |
 | ---------------------- | -------------------------------------------------------------------------- | ------------ |
 | `--port <number>`      | Port (0 = random)                                                          | `0` (random) |
-| `--theme <name>`       | Theme (colors + fonts): `dark`, `light`, `nord`, `dracula`, `solarized`, `monokai`, or custom | `dark`* |
+| `--theme <name>`       | Built-in or custom theme (see [Themes](./themes.md)) | `dark`* |
 | `--open / --no-open`   | Auto-open browser                                                          | `--open`     |
 | `--watch / --no-watch` | Live reload on changes                                                     | `--no-watch` |
 | `--days <number>`      | Number of days for `db cleanup` command                                    | `30`         |

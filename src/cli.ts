@@ -431,7 +431,7 @@ export const parseCli = (args: string[]): CliResult => {
 
   // Command handling
   if (parsed.flags.docs) {
-    return { type: "docs" };
+    return { type: "docs", flags: parsed.flags };
   }
 
   if (parsed.flags.analytics && parsed.flags.analyticsSubcommand) {

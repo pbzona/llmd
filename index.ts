@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { openBrowser } from "./src/browser";
-import { parseCli } from "./src/cli";
+import { createConfig, parseCli, validateConfig } from "./src/cli";
 import {
   cleanupOldEvents,
   clearDatabase,
@@ -20,7 +20,7 @@ import {
 import { getRelativePath, scanMarkdownFiles } from "./src/scanner";
 import { getServerUrl, startServer } from "./src/server";
 import { printSplash } from "./src/splash";
-import type { Config } from "./src/types";
+import type { Config, ParsedArgs } from "./src/types";
 
 // Delay before opening the browser, to let the server finish binding.
 const BROWSER_OPEN_DELAY_MS = 300;
@@ -67,7 +67,7 @@ const runServer = async (config: Config): Promise<void> => {
 };
 
 // Side effect: Clone or update llmd repo and launch server
-const handleDocsCommand = async (): Promise<void> => {
+const handleDocsCommand = async (flags: ParsedArgs["flags"]): Promise<void> => {
   const REPO_URL = "https://github.com/pbzona/llmd";
 
   // Determine data directory (XDG_DATA_HOME or ~/.local/share)
@@ -98,13 +98,11 @@ const handleDocsCommand = async (): Promise<void> => {
     }
   }
 
-  // Start server with docs path
-  const result = parseCli([docsPath, "--open"]);
-  if (result.type !== "config") {
-    throw new Error("Unexpected result from parseCli");
-  }
-
-  await runServer(result.config);
+  // Start the docs server while preserving options parsed alongside the command.
+  const config = createConfig({ path: docsPath, flags });
+  validateConfig(config);
+  saveThemePreferences(config.theme);
+  await runServer(config);
 };
 
 // Side effect: Handle db check command
@@ -333,7 +331,7 @@ const main = async () => {
     }
 
     if (result.type === "docs") {
-      await handleDocsCommand();
+      await handleDocsCommand(result.flags);
       // Keep process running - runServer sets up the SIGINT handler
       return;
     }

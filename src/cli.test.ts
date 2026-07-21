@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createConfig, parseArgs } from "./cli";
+import { createConfig, parseArgs, parseCli } from "./cli";
 
 describe("parseArgs", () => {
   test("parses path argument", () => {
@@ -168,6 +168,34 @@ describe("createConfig", () => {
     const config = createConfig(parsed);
     expect(config.port).toBe(8080);
     expect(config.theme).toBe("dark");
+    expect(config.open).toBe(false);
+  });
+});
+
+describe("parseCli", () => {
+  test("preserves server options supplied after the docs command", () => {
+    const result = parseCli([
+      "docs",
+      "--theme",
+      "folio",
+      "--port",
+      "4321",
+      "--tree-depth",
+      "3",
+      "--watch",
+      "--no-open",
+    ]);
+
+    expect(result.type).toBe("docs");
+    if (result.type !== "docs") {
+      throw new Error("Expected docs result");
+    }
+
+    const config = createConfig({ path: "./docs", flags: result.flags });
+    expect(config.theme).toBe("folio");
+    expect(config.port).toBe(4321);
+    expect(config.treeDepth).toBe(3);
+    expect(config.watch).toBe(true);
     expect(config.open).toBe(false);
   });
 });

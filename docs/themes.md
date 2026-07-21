@@ -1,6 +1,6 @@
 # Themes
 
-llmd includes 6 built-in themes (each pairs colors with fonts):
+llmd includes 10 built-in themes (each pairs colors with fonts):
 
 - **dark** - Dark theme with sans-serif fonts (default)
 - **light** - Warm light theme with serif fonts
@@ -8,6 +8,10 @@ llmd includes 6 built-in themes (each pairs colors with fonts):
 - **dracula** - Dracula-inspired purple theme with futuristic fonts
 - **solarized** - Solarized Light with literary fonts
 - **monokai** - Monokai-inspired theme with monospace fonts
+- **mindful** - Muted plum theme with a focused monospace treatment
+- **vesper** - Compact technical workspace with a wide reading column and sharp surfaces
+- **folio** - Print-inspired editorial layout with generous serif typography
+- **ember** - Relaxed low-light layout with rounded surfaces and warm depth
 
 ## Custom Themes
 
@@ -17,7 +21,8 @@ Create custom themes in your `themes.json` config file. Each theme includes both
 
 ### Format
 
-All theme properties are required:
+Colors and font families shown below are required. `headingColor`, `googleFontsUrl`,
+`codeTheme`, and `design` are optional.
 
 ```json
 {
@@ -42,11 +47,24 @@ All theme properties are required:
         "heading": "Georgia, serif",    // Heading font
         "code": "Monaco, monospace",    // Code font
         "googleFontsUrl": "https://..."  // Optional: Google Fonts URL
-      }
+      },
+      "codeTheme": "github-dark",
+      "design": "technical"
     }
   }
 }
 ```
+
+### Visual Designs
+
+Set the optional `design` property to change component layout and styling in addition to colors
+and fonts:
+
+- `technical` - Compact navigation, wider content, sharp surfaces, and dense code blocks
+- `editorial` - Narrow reading column, generous type, print-like rules, and squared surfaces
+- `cozy` - Relaxed spacing, rounded cards, pill navigation, and soft depth
+
+Omit `design` to use the original llmd layout.
 
 ### Google Fonts
 
