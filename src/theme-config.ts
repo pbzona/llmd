@@ -305,6 +305,11 @@ const REQUIRED_COLOR_PROPS = [
   "highlightStaleBg",
 ];
 const REQUIRED_FONT_PROPS = ["body", "heading", "code"];
+const LEGACY_THEME_CONFIG_KEYS = new Set(["colorThemes", "fontThemes"]);
+
+// Pure function: identify config metadata and containers that are not unified themes.
+const isNonThemeConfigKey = (name: string): boolean =>
+  name.startsWith("_") || LEGACY_THEME_CONFIG_KEYS.has(name);
 
 // Pure function: validate a single custom theme, logging why it was skipped.
 const validateTheme = (name: string, theme: unknown): Theme | null => {
@@ -343,6 +348,26 @@ const validateTheme = (name: string, theme: unknown): Theme | null => {
   return theme as Theme;
 };
 
+// Pure function: filter metadata and validate user-defined theme entries.
+export const validateCustomThemes = (
+  customThemes: Record<string, unknown>
+): Record<string, Theme> => {
+  const validatedThemes: Record<string, Theme> = {};
+
+  for (const [name, theme] of Object.entries(customThemes)) {
+    if (isNonThemeConfigKey(name)) {
+      continue;
+    }
+
+    const validated = validateTheme(name, theme);
+    if (validated) {
+      validatedThemes[name] = validated;
+    }
+  }
+
+  return validatedThemes;
+};
+
 // Load custom themes from unified config file
 const loadCustomThemes = (): Record<string, Theme> => {
   // Check XDG_CONFIG_HOME first, fallback to ~/.config
@@ -364,15 +389,7 @@ const loadCustomThemes = (): Record<string, Theme> => {
       return {};
     }
 
-    const validatedThemes: Record<string, Theme> = {};
-    for (const [name, theme] of Object.entries(customThemes)) {
-      const validated = validateTheme(name, theme);
-      if (validated) {
-        validatedThemes[name] = validated;
-      }
-    }
-
-    return validatedThemes;
+    return validateCustomThemes(customThemes as Record<string, unknown>);
   } catch (error) {
     console.warn(`[llmd] Failed to load custom themes from ${themesPath}:`, error);
     return {};

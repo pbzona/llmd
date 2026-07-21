@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { getAvailableThemes, getTheme } from "./theme-config";
+import { describe, expect, spyOn, test } from "bun:test";
+import { getAvailableThemes, getTheme, validateCustomThemes } from "./theme-config";
 
 const NEW_THEME_NAMES = ["vesper", "folio", "ember"] as const;
 const NEW_THEME_DESIGNS = {
@@ -10,6 +10,26 @@ const NEW_THEME_DESIGNS = {
 const MINIMUM_TEXT_CONTRAST = 4.5;
 const MINIMUM_UI_CONTRAST = 3;
 const ACTIVE_TEXT_OPACITY = 0.7;
+const VALID_CUSTOM_THEME = {
+  colors: {
+    bg: "#111111",
+    fg: "#eeeeee",
+    border: "#555555",
+    hover: "#222222",
+    accent: "#88ccbb",
+    codeBg: "#1a1a1a",
+    sidebarBg: "#0a0a0a",
+    folderIcon: "#ddaa66",
+    fileIcon: "#77aadd",
+    highlightBg: "#335555",
+    highlightStaleBg: "#663344",
+  },
+  fonts: {
+    body: "sans-serif",
+    heading: "sans-serif",
+    code: "monospace",
+  },
+};
 
 // Pure function: parse a six-digit hex color into RGB channels.
 const getRgbChannels = (hex: string): [number, number, number] => [
@@ -94,4 +114,31 @@ describe("curated built-in themes", () => {
       );
     });
   }
+});
+
+describe("custom theme config", () => {
+  test("silently ignores metadata and legacy config containers", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {
+      // The spy assertion below verifies warnings without writing test output.
+    });
+
+    try {
+      const themes = validateCustomThemes({
+        _comment: "Theme configuration",
+        _location: "~/.config/llmd/themes.json",
+        colorThemes: { legacy: {} },
+        fontThemes: { legacy: {} },
+        custom: VALID_CUSTOM_THEME,
+        broken: {},
+      });
+
+      expect(themes).toEqual({ custom: VALID_CUSTOM_THEME });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "[llmd] Skipping theme with missing/incomplete colors: broken"
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

@@ -66,6 +66,8 @@ and fonts:
 
 Omit `design` to use the original llmd layout.
 
+Top-level keys beginning with `_` are treated as metadata and ignored.
+
 ### Google Fonts
 
 If your theme uses Google Fonts, include the `googleFontsUrl` property with the full Google Fonts CSS import URL:
