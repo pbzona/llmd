@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-07-21
+
+### Added
+
+- Three new built-in themes with distinct visual systems:
+  - `vesper` - Compact technical workspace with sharp surfaces and a wider
+    reading column
+  - `folio` - Print-inspired editorial layout with generous serif typography
+  - `ember` - Relaxed low-light layout with rounded surfaces and warm depth
+- Optional `technical`, `editorial`, and `cozy` design variants for custom
+  themes
+- Contrast and layout regression coverage for the new themes
+
+### Fixed
+
+- `llmd docs` now preserves `--theme`, `--port`, `--tree-depth`, `--watch`, and
+  open behavior instead of falling back to saved preferences and defaults
+- Theme config metadata keys beginning with `_`, plus legacy `colorThemes` and
+  `fontThemes` containers, are ignored without noisy invalid-theme warnings
+- Server shutdown no longer hangs on interrupted or incomplete HTTP requests
+
+### Changed
+
+- The contrast checker now supports current unified themes and three-digit hex
+  colors
+- Added a pnpm lockfile for reproducible pnpm installs
+- Biome now ignores editor-only Cursor files, and the pre-commit hook uses the
+  pinned local Biome version
+
 ## [0.7.0] - 2026-07-10
 
 ### Changed
